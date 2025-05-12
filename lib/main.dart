@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:image_picker/image_picker.dart';
@@ -10,25 +11,114 @@ import 'package:uuid/uuid.dart';
 import 'dart:html' as html;
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:logging/logging.dart';
+import 'package:fl_chart/fl_chart.dart';
+
+// Currency class and list
+class Currency {
+  final String code;
+  final String name;
+  final String symbol;
+
+  const Currency({
+    required this.code,
+    required this.name,
+    required this.symbol,
+  });
+}
+
+const List<Currency> currencies = [
+  Currency(code: 'PKR', name: 'Pakistani Rupee', symbol: 'Rs'),
+  Currency(code: 'USD', name: 'US Dollar', symbol: '\$'),
+  Currency(code: 'EUR', name: 'Euro', symbol: '€'),
+  Currency(code: 'GBP', name: 'British Pound', symbol: '£'),
+  Currency(code: 'INR', name: 'Indian Rupee', symbol: '₹'),
+  Currency(code: 'AUD', name: 'Australian Dollar', symbol: 'A\$'),
+  Currency(code: 'CAD', name: 'Canadian Dollar', symbol: 'C\$'),
+];
 
 void main() async {
-  Logger.root.level = Level.ALL;
-  Logger.root.onRecord.listen((record) {
-    // ignore: avoid_print
-    print('${record.level.name}: ${record.time}: ${record.message}');
-  });
-  
-  final log = Logger('Main');
-  try {
-    log.info('Starting app...');
-    WidgetsFlutterBinding.ensureInitialized();
-    log.info('Flutter bindings initialized');
-    
-    runApp(const SplitWiseApp());
-    log.info('App started');
-  } catch (e) {
-    log.severe('Error starting app: $e');
-    rethrow;
+  WidgetsFlutterBinding.ensureInitialized();
+  await ThemeNotifier().loadThemeMode();
+  await CurrencyNotifier().loadCurrency();
+  runApp(const SplitWiseApp());
+}
+
+// Theme Notifier
+class ThemeNotifier extends ChangeNotifier {
+  static final ThemeNotifier _instance = ThemeNotifier._internal();
+  factory ThemeNotifier() => _instance;
+  ThemeNotifier._internal();
+
+  ThemeMode _themeMode = ThemeMode.system;
+  ThemeMode get themeMode => _themeMode;
+
+  Future<void> setThemeMode(ThemeMode mode) async {
+    _themeMode = mode;
+    notifyListeners();
+
+    if (kIsWeb) {
+      html.window.localStorage['themeMode'] = mode == ThemeMode.dark ? 'dark' : 'light';
+    } else {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool('isDarkMode', mode == ThemeMode.dark);
+    }
+  }
+
+  Future<void> loadThemeMode() async {
+    if (kIsWeb) {
+      final storage = html.window.localStorage;
+      if (storage.containsKey('themeMode')) {
+        _themeMode = storage['themeMode'] == 'dark' ? ThemeMode.dark : ThemeMode.light;
+      }
+    } else {
+      final prefs = await SharedPreferences.getInstance();
+      final isDark = prefs.getBool('isDarkMode');
+      if (isDark != null) {
+        _themeMode = isDark ? ThemeMode.dark : ThemeMode.light;
+      }
+    }
+    notifyListeners();
+  }
+}
+
+// Currency Notifier
+class CurrencyNotifier extends ChangeNotifier {
+  static final CurrencyNotifier _instance = CurrencyNotifier._internal();
+  factory CurrencyNotifier() => _instance;
+  CurrencyNotifier._internal();
+
+  Currency _currency = currencies[0];
+  Currency get currency => _currency;
+
+  Future<void> setCurrency(Currency currency) async {
+    _currency = currency;
+    notifyListeners();
+
+    if (kIsWeb) {
+      html.window.localStorage['currency'] = currency.code;
+    } else {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('currency', currency.code);
+    }
+  }
+
+  Future<void> loadCurrency() async {
+    if (kIsWeb) {
+      final storage = html.window.localStorage;
+      final currencyCode = storage['currency'] ?? 'PKR';
+      _currency = currencies.firstWhere(
+        (c) => c.code == currencyCode,
+        orElse: () => currencies[0],
+      );
+    } else {
+      final prefs = await SharedPreferences.getInstance();
+      final currencyCode = prefs.getString('currency') ?? 'PKR';
+      _currency = currencies.firstWhere(
+        (c) => c.code == currencyCode,
+        orElse: () => currencies[0],
+      );
+    }
+    notifyListeners();
   }
 }
 
@@ -37,49 +127,98 @@ class SplitWiseApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'Splitwise',
-      debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        primaryColor: const Color(0xFF1CC29F),
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xFF1CC29F),
-          primary: const Color(0xFF1CC29F),
-          secondary: const Color(0xFF8A2BE2),
-          background: Colors.white,
-        ),
-        fontFamily: 'Roboto',
-        appBarTheme: const AppBarTheme(
-          backgroundColor: Colors.white,
-          foregroundColor: Colors.black,
-          elevation: 0,
-        ),
-        elevatedButtonTheme: ElevatedButtonThemeData(
-          style: ElevatedButton.styleFrom(
-            backgroundColor: const Color(0xFF1CC29F),
-            foregroundColor: Colors.white,
-            minimumSize: const Size(double.infinity, 50),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(8),
+    return ListenableBuilder(
+      listenable: ThemeNotifier(),
+      builder: (context, child) {
+        return MaterialApp(
+          title: 'Splitwise',
+          debugShowCheckedModeBanner: false,
+          theme: ThemeData(
+            primaryColor: const Color(0xFF1CC29F),
+            colorScheme: ColorScheme.fromSeed(
+              seedColor: const Color(0xFF1CC29F),
+              primary: const Color(0xFF1CC29F),
+              secondary: const Color(0xFF8A2BE2),
+              background: Colors.white,
+            ),
+            fontFamily: 'Roboto',
+            appBarTheme: const AppBarTheme(
+              backgroundColor: Colors.white,
+              foregroundColor: Colors.black,
+              elevation: 0,
+            ),
+            elevatedButtonTheme: ElevatedButtonThemeData(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF1CC29F),
+                foregroundColor: Colors.white,
+                minimumSize: const Size(double.infinity, 50),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+              ),
+            ),
+            textButtonTheme: TextButtonThemeData(
+              style: TextButton.styleFrom(
+                foregroundColor: const Color(0xFF1CC29F),
+              ),
+            ),
+            inputDecorationTheme: InputDecorationTheme(
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(8),
+                borderSide: const BorderSide(color: Color(0xFF1CC29F), width: 2),
+              ),
             ),
           ),
-        ),
-        textButtonTheme: TextButtonThemeData(
-          style: TextButton.styleFrom(
-            foregroundColor: const Color(0xFF1CC29F),
+          darkTheme: ThemeData(
+            primaryColor: const Color(0xFF1CC29F),
+            colorScheme: ColorScheme.fromSeed(
+              brightness: Brightness.dark,
+              seedColor: const Color(0xFF1CC29F),
+              primary: const Color(0xFF1CC29F),
+              secondary: const Color(0xFF8A2BE2),
+              background: const Color(0xFF121212),
+            ),
+            fontFamily: 'Roboto',
+            scaffoldBackgroundColor: const Color(0xFF121212),
+            appBarTheme: const AppBarTheme(
+              backgroundColor: Color(0xFF1E1E1E),
+              foregroundColor: Colors.white,
+              elevation: 0,
+            ),
+            elevatedButtonTheme: ElevatedButtonThemeData(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF1CC29F),
+                foregroundColor: Colors.white,
+                minimumSize: const Size(double.infinity, 50),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+              ),
+            ),
+            textButtonTheme: TextButtonThemeData(
+              style: TextButton.styleFrom(
+                foregroundColor: const Color(0xFF1CC29F),
+              ),
+            ),
+            inputDecorationTheme: InputDecorationTheme(
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(8),
+                borderSide: const BorderSide(color: Color(0xFF1CC29F), width: 2),
+              ),
+            ),
+            cardColor: const Color(0xFF1E1E1E),
+            dividerColor: Colors.white24,
           ),
-        ),
-        inputDecorationTheme: InputDecorationTheme(
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(8),
-          ),
-          focusedBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(8),
-            borderSide: const BorderSide(color: Color(0xFF1CC29F), width: 2),
-          ),
-        ),
-      ),
-      home: const SplashScreen(),
+          themeMode: ThemeNotifier().themeMode,
+          home: const SplashScreen(),
+        );
+      },
     );
   }
 }
@@ -556,6 +695,147 @@ class DatabaseService {
     }
     
     return transactions;
+  }
+
+  // Delete Methods
+  Future<void> removeFriend(String userId, String friendId) async {
+    final users = await getUsers();
+    final userIndex = users.indexWhere((user) => user['id'] == userId);
+    final friendIndex = users.indexWhere((user) => user['id'] == friendId);
+    
+    if (userIndex != -1 && friendIndex != -1) {
+      // Remove friend from user's friends list
+      users[userIndex]['friends'] ??= [];
+      users[userIndex]['friends'].remove(friendId);
+      
+      // Remove user from friend's friends list
+      users[friendIndex]['friends'] ??= [];
+      users[friendIndex]['friends'].remove(userId);
+      
+      await _writeJsonFile(_usersFileName, users);
+    }
+  }
+
+  Future<void> deleteGroup(String groupId) async {
+    // Delete group
+    final groups = await getGroups();
+    groups.removeWhere((group) => group['id'] == groupId);
+    await _writeJsonFile(_groupsFileName, groups);
+    
+    // Delete associated expenses
+    final expenses = await getExpenses();
+    expenses.removeWhere((expense) => expense['groupId'] == groupId);
+    await _writeJsonFile(_expensesFileName, expenses);
+  }
+
+  Future<void> deleteExpense(String expenseId) async {
+    final expenses = await getExpenses();
+    final expenseIndex = expenses.indexWhere((expense) => expense['id'] == expenseId);
+    
+    if (expenseIndex != -1) {
+      final expense = expenses[expenseIndex];
+      final groupId = expense['groupId'];
+      final group = await getGroupById(groupId);
+      
+      if (group != null) {
+        // Reverse the balances
+        final members = List<Map<String, dynamic>>.from(group['members']);
+        final splitWith = List<Map<String, dynamic>>.from(expense['splitWith']);
+        final amount = expense['amount'];
+        final paidBy = expense['paidBy'];
+        
+        for (var i = 0; i < members.length; i++) {
+          final member = members[i];
+          final split = splitWith.firstWhere(
+            (s) => s['userId'] == member['id'],
+            orElse: () => {'amount': 0.0},
+          );
+          
+          if (member['id'] == paidBy) {
+            // Reverse payer's balance
+            member['balance'] = (member['balance'] ?? 0.0) - (amount - split['amount']);
+          } else {
+            // Reverse other members' balances
+            member['balance'] = (member['balance'] ?? 0.0) + split['amount'];
+          }
+        }
+        
+        // Update group with reversed balances
+        final updatedGroup = {
+          ...group,
+          'members': members,
+        };
+        await updateGroup(updatedGroup);
+      }
+      
+      // Remove the expense
+      expenses.removeAt(expenseIndex);
+      await _writeJsonFile(_expensesFileName, expenses);
+    }
+  }
+
+  Future<String?> saveProfileImage(String userId, dynamic imageFile) async {
+    try {
+      if (kIsWeb) {
+        // For web, convert image to base64 and store in shared location
+        final bytes = await imageFile.readAsBytes();
+        final base64Image = base64Encode(bytes);
+        final storage = html.window.localStorage;
+        final key = 'profile_images';
+        
+        // Get existing profile images map or create new one
+        Map<String, dynamic> profileImages = {};
+        if (storage.containsKey(key)) {
+          profileImages = Map<String, dynamic>.from(
+            jsonDecode(storage[key]!)
+          );
+        }
+        
+        // Add/update this user's profile image
+        profileImages[userId] = base64Image;
+        storage[key] = jsonEncode(profileImages);
+        
+        return userId; // Return userId as the key
+      } else {
+        // For mobile, save to app directory
+        final directory = await getApplicationDocumentsDirectory();
+        final fileName = 'profile_image_$userId.jpg';
+        final savedImage = await (imageFile as File).copy('${directory.path}/$fileName');
+        return savedImage.path;
+      }
+    } catch (e) {
+      _log.severe('Error saving profile image: $e');
+      return null;
+    }
+  }
+
+  Future<dynamic> getProfileImage(String userId, String? imagePath) async {
+    try {
+      if (kIsWeb) {
+        final storage = html.window.localStorage;
+        final key = 'profile_images';
+        
+        if (storage.containsKey(key)) {
+          final profileImages = Map<String, dynamic>.from(
+            jsonDecode(storage[key]!)
+          );
+          
+          if (profileImages.containsKey(userId)) {
+            return profileImages[userId];
+          }
+        }
+        return null;
+      } else if (imagePath != null) {
+        final file = File(imagePath);
+        if (await file.exists()) {
+          return file;
+        }
+      }
+      return null;
+    } catch (e) {
+      _log.severe('Error loading profile image: $e');
+      return null;
+    }
   }
 }
 
@@ -1399,6 +1679,38 @@ class _FriendsTabState extends State<FriendsTab> {
     }
   }
 
+  Future<bool?> _removeFriend(Map<String, dynamic> friend) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Remove Friend'),
+        content: Text('Are you sure you want to remove ${friend['name']} from your friends?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            style: TextButton.styleFrom(
+              foregroundColor: Colors.red,
+            ),
+            child: const Text('Remove'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      await DatabaseService().removeFriend(widget.userId, friend['id']);
+      setState(() {
+        _loadData();
+      });
+      return true;
+    }
+    return false;
+  }
+
   @override
   void dispose() {
     _searchController.dispose();
@@ -1493,7 +1805,7 @@ class _FriendsTabState extends State<FriendsTab> {
                             ),
                           ),
                           Text(
-                            'PKR ${netBalance.abs().toStringAsFixed(2)}',
+                            formatCurrency(netBalance),
                             style: TextStyle(
                               fontSize: 20,
                               fontWeight: FontWeight.bold,
@@ -1542,39 +1854,43 @@ class _FriendsTabState extends State<FriendsTab> {
                         final isSettled = balance?['type'] == 'settled';
                         final amount = balance?['amount'] ?? 0.0;
                         
-                        return ListTile(
-                          leading: CircleAvatar(
-                            backgroundColor: isOwed 
-                                ? Colors.red.shade700 
-                                : isSettled 
-                                    ? Colors.blue.shade700 
-                                    : Colors.green.shade700,
-                            child: Text(
-                              friend['name'].substring(0, 1).toUpperCase(),
-                              style: const TextStyle(color: Colors.white),
+                        return Dismissible(
+                          key: Key(friend['id']),
+                          direction: DismissDirection.endToStart,
+                          background: Container(
+                            alignment: Alignment.centerRight,
+                            padding: const EdgeInsets.only(right: 20.0),
+                            color: Colors.red,
+                            child: const Icon(
+                              Icons.delete,
+                              color: Colors.white,
                             ),
                           ),
-                          title: Text(
-                            friend['name'],
-                            style: const TextStyle(
-                              fontWeight: FontWeight.bold,
+                          confirmDismiss: (_) => _removeFriend(friend),
+                          child: ListTile(
+                            leading: _buildFriendAvatar(friend),
+                            title: Text(
+                              friend['name'],
+                              style: const TextStyle(
+                                fontWeight: FontWeight.bold,
+                              ),
                             ),
-                          ),
-                          subtitle: Text(friend['email']),
-                          trailing: isSettled 
-                              ? const Text('settled up')
-                              : Text(
-                                  isOwed 
-                                      ? 'owes you PKR ${amount.toStringAsFixed(2)}'
-                                      : 'you owe PKR ${amount.toStringAsFixed(2)}',
-                                  style: TextStyle(
-                                    color: isOwed ? const Color(0xFF1CC29F) : Colors.orange,
-                                    fontWeight: FontWeight.bold,
+                            subtitle: Text(friend['email']),
+                            trailing: isSettled 
+                                ? const Text('settled up')
+                                : Text(
+                                    isOwed 
+                                        ? 'owes you ${formatCurrency(amount)}'
+                                        : 'you owe ${formatCurrency(amount)}',
+                                    style: TextStyle(
+                                      color: isOwed ? const Color(0xFF1CC29F) : Colors.orange,
+                                      fontWeight: FontWeight.bold,
+                                    ),
                                   ),
-                                ),
-                          onTap: () {
-                            // Navigate to friend details
-                          },
+                            onTap: () {
+                              // Navigate to friend details
+                            },
+                          ),
                         );
                       }).toList(),
                   ],
@@ -1584,6 +1900,51 @@ class _FriendsTabState extends State<FriendsTab> {
           },
         ),
       ),
+    );
+  }
+
+  Widget _buildFriendAvatar(Map<String, dynamic> friend) {
+    return FutureBuilder<dynamic>(
+      future: DatabaseService().getProfileImage(
+        friend['id'],
+        friend['profilePicture'],
+      ),
+      builder: (context, snapshot) {
+        if (snapshot.hasData && snapshot.data != null) {
+          if (kIsWeb) {
+            return CircleAvatar(
+              backgroundColor: Colors.grey.shade200,
+              child: ClipOval(
+                child: Image.memory(
+                  base64Decode(snapshot.data as String),
+                  width: 40,
+                  height: 40,
+                  fit: BoxFit.cover,
+                ),
+              ),
+            );
+          } else {
+            return CircleAvatar(
+              backgroundColor: Colors.grey.shade200,
+              child: ClipOval(
+                child: Image.file(
+                  snapshot.data as File,
+                  width: 40,
+                  height: 40,
+                  fit: BoxFit.cover,
+                ),
+              ),
+            );
+          }
+        }
+        return CircleAvatar(
+          backgroundColor: Colors.primaries[friend['name'].hashCode % Colors.primaries.length],
+          child: Text(
+            friend['name'].substring(0, 1).toUpperCase(),
+            style: const TextStyle(color: Colors.white),
+          ),
+        );
+      },
     );
   }
 }
@@ -1739,6 +2100,38 @@ class _GroupsTabState extends State<GroupsTab> {
     }
   }
 
+  Future<bool?> _deleteGroup(Map<String, dynamic> group) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete Group'),
+        content: Text('Are you sure you want to delete "${group['name']}"? This will delete all associated expenses and cannot be undone.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            style: TextButton.styleFrom(
+              foregroundColor: Colors.red,
+            ),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      await DatabaseService().deleteGroup(group['id']);
+      setState(() {
+        _loadData();
+      });
+      return true;
+    }
+    return false;
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -1819,7 +2212,7 @@ class _GroupsTabState extends State<GroupsTab> {
                             ),
                           ),
                           Text(
-                            'PKR ${netBalance.abs().toStringAsFixed(2)}',
+                            formatCurrency(netBalance),
                             style: TextStyle(
                               fontSize: 20,
                               fontWeight: FontWeight.bold,
@@ -1873,60 +2266,74 @@ class _GroupsTabState extends State<GroupsTab> {
                         final groupBalance = _calculateGroupBalance(group, widget.userId);
                         final isOwed = groupBalance > 0;
                         
-                        return ListTile(
-                          leading: group['icon'] != null
-                              ? Image.asset(group['icon'], width: 40, height: 40)
-                              : Container(
-                                  width: 40,
-                                  height: 40,
-                                  decoration: BoxDecoration(
-                                    color: Colors.primaries[
-                                      group['name'].hashCode % Colors.primaries.length
-                                    ],
-                                    borderRadius: BorderRadius.circular(8),
-                                  ),
-                                  child: Center(
-                                    child: Text(
-                                      group['name'].substring(0, 1).toUpperCase(),
-                                      style: const TextStyle(
-                                        color: Colors.white,
-                                        fontWeight: FontWeight.bold,
-                                        fontSize: 18,
+                        return Dismissible(
+                          key: Key(group['id']),
+                          direction: DismissDirection.endToStart,
+                          background: Container(
+                            alignment: Alignment.centerRight,
+                            padding: const EdgeInsets.only(right: 20.0),
+                            color: Colors.red,
+                            child: const Icon(
+                              Icons.delete,
+                              color: Colors.white,
+                            ),
+                          ),
+                          confirmDismiss: (_) => _deleteGroup(group),
+                          child: ListTile(
+                            leading: group['icon'] != null
+                                ? Image.asset(group['icon'], width: 40, height: 40)
+                                : Container(
+                                    width: 40,
+                                    height: 40,
+                                    decoration: BoxDecoration(
+                                      color: Colors.primaries[
+                                        group['name'].hashCode % Colors.primaries.length
+                                      ],
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                    child: Center(
+                                      child: Text(
+                                        group['name'].substring(0, 1).toUpperCase(),
+                                        style: const TextStyle(
+                                          color: Colors.white,
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 18,
+                                        ),
                                       ),
                                     ),
                                   ),
-                                ),
-                          title: Text(
-                            group['name'],
-                            style: const TextStyle(
-                              fontWeight: FontWeight.bold,
+                            title: Text(
+                              group['name'],
+                              style: const TextStyle(
+                                fontWeight: FontWeight.bold,
+                              ),
                             ),
-                          ),
-                          subtitle: Text(
-                            '${(group['members'] as List).length} members',
-                            style: TextStyle(color: Colors.grey.shade600),
-                          ),
-                          trailing: groupBalance == 0
-                              ? const Text('settled up')
-                              : Text(
-                                  isOwed 
-                                      ? 'you are owed\nPKR ${groupBalance.abs().toStringAsFixed(2)}'
-                                      : 'you owe\nPKR ${groupBalance.abs().toStringAsFixed(2)}',
-                                  textAlign: TextAlign.right,
-                                  style: TextStyle(
-                                    color: isOwed ? const Color(0xFF1CC29F) : Colors.orange,
+                            subtitle: Text(
+                              '${(group['members'] as List).length} members',
+                              style: TextStyle(color: Colors.grey.shade600),
+                            ),
+                            trailing: groupBalance == 0
+                                ? const Text('settled up')
+                                : Text(
+                                    isOwed 
+                                        ? 'you are owed\n${formatCurrency(groupBalance)}'
+                                        : 'you owe\n${formatCurrency(groupBalance)}',
+                                    textAlign: TextAlign.right,
+                                    style: TextStyle(
+                                      color: isOwed ? const Color(0xFF1CC29F) : Colors.orange,
+                                    ),
+                                  ),
+                            onTap: () {
+                              Navigator.of(context).push(
+                                MaterialPageRoute(
+                                  builder: (_) => GroupDetailPage(
+                                    groupId: group['id'],
+                                    userId: widget.userId,
                                   ),
                                 ),
-                          onTap: () {
-                            Navigator.of(context).push(
-                              MaterialPageRoute(
-                                builder: (_) => GroupDetailPage(
-                                  groupId: group['id'],
-                                  userId: widget.userId,
-                                ),
-                              ),
-                            );
-                          },
+                              );
+                            },
+                          ),
                         );
                       }).toList(),
                       
@@ -2032,6 +2439,38 @@ class _GroupDetailPageState extends State<GroupDetailPage> {
     _simplifiedDebtsFuture = DatabaseService().simplifyDebts(widget.groupId);
   }
 
+  Future<bool?> _deleteGroup() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete Group'),
+        content: const Text('Are you sure you want to delete this group? This will delete all associated expenses and cannot be undone.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            style: TextButton.styleFrom(
+              foregroundColor: Colors.red,
+            ),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      await DatabaseService().deleteGroup(widget.groupId);
+      if (mounted) {
+        Navigator.of(context).pop();
+      }
+      return true;
+    }
+    return false;
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -2049,11 +2488,24 @@ class _GroupDetailPageState extends State<GroupDetailPage> {
           },
         ),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.settings),
-            onPressed: () {
-              // Group settings
+          PopupMenuButton<String>(
+            onSelected: (value) async {
+              if (value == 'delete') {
+                await _deleteGroup();
+              }
             },
+            itemBuilder: (context) => [
+              const PopupMenuItem(
+                value: 'delete',
+                child: Row(
+                  children: [
+                    Icon(Icons.delete, color: Colors.red),
+                    SizedBox(width: 8),
+                    Text('Delete group', style: TextStyle(color: Colors.red)),
+                  ],
+                ),
+              ),
+            ],
           ),
         ],
       ),
@@ -2123,7 +2575,7 @@ class _GroupDetailPageState extends State<GroupDetailPage> {
                                             size: 64,
                                             color: Colors.grey,
                                           ),
-                      const SizedBox(height: 16),
+                                          const SizedBox(height: 16),
                                           const Text(
                                             'No expenses yet',
                                             style: TextStyle(
@@ -2161,6 +2613,7 @@ class _GroupDetailPageState extends State<GroupDetailPage> {
                                         return ExpenseListItem(
                                           expense: expense,
                                           userId: widget.userId,
+                                          onDelete: () => setState(() => _loadData()),
                                         );
                                       },
                                     ),
@@ -2272,11 +2725,11 @@ class _GroupDetailPageState extends State<GroupDetailPage> {
                     ),
                   );
                 },
-                );
-              },
-            );
-          },
-        ),
+              );
+            },
+          );
+        },
+      ),
       floatingActionButton: FloatingActionButton(
         onPressed: () {
           Navigator.of(context).push(
@@ -2299,12 +2752,45 @@ class _GroupDetailPageState extends State<GroupDetailPage> {
 class ExpenseListItem extends StatelessWidget {
   final Map<String, dynamic> expense;
   final String userId;
+  final Function()? onDelete;
 
   const ExpenseListItem({
     super.key,
     required this.expense,
     required this.userId,
+    this.onDelete,
   });
+
+  Future<bool?> _confirmDelete(BuildContext context) async {
+    return showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete Expense'),
+        content: const Text('Are you sure you want to delete this expense? This will update all balances and cannot be undone.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            style: TextButton.styleFrom(
+              foregroundColor: Colors.red,
+            ),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _handleDelete(BuildContext context) async {
+    final confirmed = await _confirmDelete(context);
+    if (confirmed == true) {
+      await DatabaseService().deleteExpense(expense['id']);
+      onDelete?.call();
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -2317,30 +2803,77 @@ class ExpenseListItem extends StatelessWidget {
       builder: (context, snapshot) {
         final payerName = snapshot.data?['name'] ?? 'Unknown';
         
-        return ListTile(
-          leading: Container(
-            width: 40,
-            height: 40,
-            decoration: BoxDecoration(
-              color: Colors.grey.shade200,
-              borderRadius: BorderRadius.circular(8),
+        return Dismissible(
+          key: Key(expense['id']),
+          direction: DismissDirection.endToStart,
+          background: Container(
+            alignment: Alignment.centerRight,
+            padding: const EdgeInsets.only(right: 20.0),
+            color: Colors.red,
+            child: const Icon(
+              Icons.delete,
+              color: Colors.white,
             ),
-            child: Icon(
-              _getCategoryIcon(expense['category']),
-              color: _getCategoryColor(expense['category']),
-            ),
           ),
-          title: Text(
-            expense['description'],
-            style: const TextStyle(fontWeight: FontWeight.bold),
-          ),
-          subtitle: Text(
-            '$formattedDate • ${isUserPayer ? 'You paid' : '$payerName paid'} PKR ${expense['amount'].toStringAsFixed(2)}',
-          ),
-          trailing: _buildTrailingWidget(),
-          onTap: () {
-            // Show expense details
+          confirmDismiss: (_) async {
+            final confirmed = await _confirmDelete(context);
+            if (confirmed == true) {
+              await DatabaseService().deleteExpense(expense['id']);
+              onDelete?.call();
+              return true;
+            }
+            return false;
           },
+          child: ListTile(
+            leading: Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                color: Colors.grey.shade200,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Icon(
+                _getCategoryIcon(expense['category']),
+                color: _getCategoryColor(expense['category']),
+              ),
+            ),
+            title: Text(
+              expense['description'],
+              style: const TextStyle(fontWeight: FontWeight.bold),
+            ),
+            subtitle: Text(
+              '$formattedDate • ${isUserPayer ? 'You paid' : '$payerName paid'} PKR ${expense['amount'].toStringAsFixed(2)}',
+            ),
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _buildTrailingWidget(),
+                PopupMenuButton<String>(
+                  icon: const Icon(Icons.more_vert),
+                  onSelected: (value) {
+                    if (value == 'delete') {
+                      _handleDelete(context);
+                    }
+                  },
+                  itemBuilder: (context) => [
+                    const PopupMenuItem(
+                      value: 'delete',
+                      child: Row(
+                        children: [
+                          Icon(Icons.delete, color: Colors.red),
+                          SizedBox(width: 8),
+                          Text('Delete expense', style: TextStyle(color: Colors.red)),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+            onTap: () {
+              // Show expense details
+            },
+          ),
         );
       },
     );
@@ -2361,7 +2894,7 @@ class ExpenseListItem extends StatelessWidget {
       if (totalLent <= 0) return const Text('you paid');
       
       return Text(
-        'you lent\nPKR ${totalLent.toStringAsFixed(2)}',
+        'you lent\n${formatCurrency(totalLent)}',
         textAlign: TextAlign.right,
         style: const TextStyle(
           color: Color(0xFF1CC29F),
@@ -2411,74 +2944,250 @@ class AddExpenseTab extends StatelessWidget {
 
   const AddExpenseTab({super.key, required this.userId});
 
-  @override
-  Widget build(BuildContext context) {
-    return FutureBuilder<List<Map<String, dynamic>>>(
-      future: DatabaseService().getGroupsByUserId(userId),
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(child: CircularProgressIndicator());
-        }
-
-        final groups = snapshot.data ?? [];
-        
-        if (groups.isEmpty) {
-          return Scaffold(
-            appBar: AppBar(
-              title: const Text('Add expenses'),
+  void _showExpenseTypeDialog(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Add an expense'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.person, color: Color(0xFF1CC29F)),
+              title: const Text('With a friend'),
+              subtitle: const Text('Split expenses with one person'),
+              onTap: () {
+                Navigator.pop(context);
+                _showFriendSelectionDialog(context);
+              },
             ),
-            body: Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
+            const Divider(),
+            ListTile(
+              leading: const Icon(Icons.group, color: Color(0xFF1CC29F)),
+              title: const Text('In a group'),
+              subtitle: const Text('Split expenses with multiple people'),
+              onTap: () {
+                Navigator.pop(context);
+                _showGroupSelectionDialog(context);
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showFriendSelectionDialog(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Select friend'),
+        content: FutureBuilder<List<Map<String, dynamic>>>(
+          future: DatabaseService().getFriends(userId),
+          builder: (context, snapshot) {
+            if (snapshot.connectionState == ConnectionState.waiting) {
+              return const Center(child: CircularProgressIndicator());
+            }
+
+            final friends = snapshot.data ?? [];
+            
+            if (friends.isEmpty) {
+              return const Column(
+                mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(
-                    Icons.group_outlined,
-                    size: 64,
-                    color: Colors.grey.shade400,
-                  ),
-                  const SizedBox(height: 16),
+                  Icon(Icons.person_outline, size: 48, color: Colors.grey),
+                  SizedBox(height: 16),
+                  Text('No friends yet'),
+                  SizedBox(height: 8),
                   Text(
-                    'No groups yet',
-                    style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.grey.shade600,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    'Create a group first to add expenses',
-                    style: TextStyle(
-                      color: Colors.grey.shade600,
-                    ),
+                    'Add friends first to split expenses',
+                    style: TextStyle(color: Colors.grey),
+                    textAlign: TextAlign.center,
                   ),
                 ],
+              );
+            }
+
+            return SizedBox(
+              width: double.maxFinite,
+              child: ListView.builder(
+                shrinkWrap: true,
+                itemCount: friends.length,
+                itemBuilder: (context, index) {
+                  final friend = friends[index];
+                  return ListTile(
+                    leading: CircleAvatar(
+                      backgroundColor: Colors.primaries[friend['name'].hashCode % Colors.primaries.length],
+                      child: Text(
+                        friend['name'].toString().substring(0, 1).toUpperCase(),
+                        style: const TextStyle(color: Colors.white),
+                      ),
+                    ),
+                    title: Text(friend['name'].toString()),
+                    subtitle: Text(friend['email'].toString()),
+                    onTap: () {
+                      Navigator.pop(context);
+                      // Create a temporary group for this friend
+                      final tempGroup = {
+                        'id': const Uuid().v4(),
+                        'name': 'Individual expense',
+                        'members': [
+                          {'id': userId, 'balance': 0.0},
+                          {'id': friend['id'].toString(), 'balance': 0.0},
+                        ],
+                      };
+                      Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => AddExpensePage(
+                            groupId: tempGroup['id'].toString(),
+                            userId: userId,
+                            isTemporaryGroup: true,
+                            tempGroup: tempGroup,
+                          ),
+                        ),
+                      );
+                    },
+                  );
+                },
+              ),
+            );
+          },
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showGroupSelectionDialog(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Select group'),
+        content: FutureBuilder<List<Map<String, dynamic>>>(
+          future: DatabaseService().getGroupsByUserId(userId),
+          builder: (context, snapshot) {
+            if (snapshot.connectionState == ConnectionState.waiting) {
+              return const Center(child: CircularProgressIndicator());
+            }
+
+            final groups = snapshot.data ?? [];
+            
+            if (groups.isEmpty) {
+              return Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.groups_outlined, size: 48, color: Colors.grey),
+                  const SizedBox(height: 16),
+                  const Text('No groups yet'),
+                  const SizedBox(height: 8),
+                  const Text(
+                    'Create a group first to split expenses',
+                    style: TextStyle(color: Colors.grey),
+                    textAlign: TextAlign.center,
+                  ),
+                ],
+              );
+            }
+
+            return SizedBox(
+              width: double.maxFinite,
+              child: ListView.builder(
+                shrinkWrap: true,
+                itemCount: groups.length,
+                itemBuilder: (context, index) {
+                  final group = groups[index];
+                  return ListTile(
+                    leading: Container(
+                      width: 40,
+                      height: 40,
+                      decoration: BoxDecoration(
+                        color: Colors.primaries[group['name'].toString().hashCode % Colors.primaries.length],
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Center(
+                        child: Text(
+                          group['name'].toString().substring(0, 1).toUpperCase(),
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                    ),
+                    title: Text(group['name'].toString()),
+                    subtitle: Text('${(group['members'] as List).length} members'),
+                    onTap: () {
+                      Navigator.pop(context);
+                      Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => AddExpensePage(
+                            groupId: group['id'].toString(),
+                            userId: userId,
+                          ),
+                        ),
+                      );
+                    },
+                  );
+                },
+              ),
+            );
+          },
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Add expenses'),
+      ),
+      body: Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              Icons.add_circle_outline,
+              size: 64,
+              color: Colors.grey.shade400,
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'Add a new expense',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+                color: Colors.grey.shade600,
               ),
             ),
-          );
-        }
-
-        // If there are groups, directly navigate to AddExpensePage
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          Navigator.of(context).push(
-            MaterialPageRoute(
-              builder: (_) => AddExpensePage(
-                groupId: groups.first['id'],
-                userId: userId,
+            const SizedBox(height: 8),
+            Text(
+              'Split expenses with friends or groups',
+              style: TextStyle(
+                color: Colors.grey.shade600,
               ),
             ),
-          );
-        });
-
-        return Scaffold(
-          appBar: AppBar(
-            title: const Text('Add expenses'),
-          ),
-          body: const Center(
-            child: CircularProgressIndicator(),
-          ),
-        );
-      },
+            const SizedBox(height: 32),
+            ElevatedButton.icon(
+              onPressed: () => _showExpenseTypeDialog(context),
+              icon: const Icon(Icons.add),
+              label: const Text('Add an expense'),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
@@ -2487,11 +3196,15 @@ class AddExpenseTab extends StatelessWidget {
 class AddExpensePage extends StatefulWidget {
   final String groupId;
   final String userId;
+  final bool isTemporaryGroup;
+  final Map<String, dynamic>? tempGroup;
 
   const AddExpensePage({
     super.key,
     required this.groupId,
     required this.userId,
+    this.isTemporaryGroup = false,
+    this.tempGroup,
   });
 
   @override
@@ -2516,10 +3229,9 @@ class _AddExpensePageState extends State<AddExpensePage> {
   }
 
   Future<void> _loadGroupMembers() async {
-    final group = await DatabaseService().getGroupById(widget.groupId);
-    if (group != null) {
+    if (widget.isTemporaryGroup && widget.tempGroup != null) {
       setState(() {
-        _members = List<Map<String, dynamic>>.from(group['members']);
+        _members = List<Map<String, dynamic>>.from(widget.tempGroup!['members']);
         
         // Initialize split amounts
         final equalAmount = 0.0; // Will be calculated when amount is entered
@@ -2527,6 +3239,19 @@ class _AddExpensePageState extends State<AddExpensePage> {
           _splitAmounts[member['id']] = equalAmount;
         }
       });
+    } else {
+      final group = await DatabaseService().getGroupById(widget.groupId);
+      if (group != null) {
+        setState(() {
+          _members = List<Map<String, dynamic>>.from(group['members']);
+          
+          // Initialize split amounts
+          final equalAmount = 0.0; // Will be calculated when amount is entered
+          for (var member in _members) {
+            _splitAmounts[member['id']] = equalAmount;
+          }
+        });
+      }
     }
   }
 
@@ -2591,6 +3316,7 @@ class _AddExpensePageState extends State<AddExpensePage> {
       'receiptUrl': null, // Would store image URL in a real app
       'notes': '',
       'createdAt': DateTime.now().toIso8601String(),
+      'isIndividualExpense': widget.isTemporaryGroup,
     };
     
     // Save to database
@@ -2609,33 +3335,36 @@ class _AddExpensePageState extends State<AddExpensePage> {
     
     await DatabaseService().addActivity(activity);
     
-    // Update group balances
-    final group = await DatabaseService().getGroupById(widget.groupId);
-    if (group != null) {
-      final members = List<Map<String, dynamic>>.from(group['members']);
-      
-      for (var i = 0; i < members.length; i++) {
-        final member = members[i];
-        final split = splitWith.firstWhere(
-          (s) => s['userId'] == member['id'],
-          orElse: () => {'amount': 0.0},
-        );
+    // Update balances
+    if (!widget.isTemporaryGroup) {
+      // Update group balances only for real groups
+      final group = await DatabaseService().getGroupById(widget.groupId);
+      if (group != null) {
+        final members = List<Map<String, dynamic>>.from(group['members']);
         
-        if (member['id'] == widget.userId) {
-          // Current user paid
-          member['balance'] = (member['balance'] ?? 0.0) + (amount - split['amount']);
-        } else {
-          // Other members
-          member['balance'] = (member['balance'] ?? 0.0) - split['amount'];
+        for (var i = 0; i < members.length; i++) {
+          final member = members[i];
+          final split = splitWith.firstWhere(
+            (s) => s['userId'] == member['id'],
+            orElse: () => {'amount': 0.0},
+          );
+          
+          if (member['id'] == widget.userId) {
+            // Current user paid
+            member['balance'] = (member['balance'] ?? 0.0) + (amount - split['amount']);
+          } else {
+            // Other members
+            member['balance'] = (member['balance'] ?? 0.0) - split['amount'];
+          }
         }
+        
+        final updatedGroup = {
+          ...group,
+          'members': members,
+        };
+        
+        await DatabaseService().updateGroup(updatedGroup);
       }
-      
-      final updatedGroup = {
-        ...group,
-        'members': members,
-      };
-      
-      await DatabaseService().updateGroup(updatedGroup);
     }
     
     if (mounted) {
@@ -2921,61 +3650,553 @@ class ActivityTab extends StatefulWidget {
 
 class _ActivityTabState extends State<ActivityTab> {
   late Future<List<Map<String, dynamic>>> _activitiesFuture;
+  late Future<Map<String, dynamic>> _balancesFuture;
 
   @override
   void initState() {
     super.initState();
-    _loadActivities();
+    _loadData();
   }
 
-  Future<void> _loadActivities() async {
+  Future<void> _loadData() async {
     _activitiesFuture = DatabaseService().getActivitiesByUserId(widget.userId);
+    _balancesFuture = DatabaseService().calculateBalances(widget.userId);
   }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Recent activity'),
-      ),
-      body: RefreshIndicator(
-        onRefresh: () async {
-          setState(() {
-            _loadActivities();
-          });
-        },
-        child: FutureBuilder<List<Map<String, dynamic>>>(
-          future: _activitiesFuture,
-          builder: (context, snapshot) {
-            if (snapshot.connectionState == ConnectionState.waiting) {
-              return const Center(child: CircularProgressIndicator());
-            }
-
-            if (snapshot.hasError) {
-              return Center(child: Text('Error: ${snapshot.error}'));
-            }
-
-            final activities = snapshot.data ?? [];
-            
-            if (activities.isEmpty) {
-              return const Center(
-                child: Text('No recent activity'),
-              );
-            }
-            
-            return ListView.builder(
-              itemCount: activities.length,
-              itemBuilder: (context, index) {
-                final activity = activities[index];
-                return ActivityListItem(
-                  activity: activity,
-                  userId: widget.userId,
-                );
+    return DefaultTabController(
+      length: 2,
+      child: Scaffold(
+        appBar: AppBar(
+          title: const Text('Activity'),
+          bottom: TabBar(
+            tabs: [
+              Tab(
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Icon(Icons.pie_chart),
+                    const SizedBox(width: 8),
+                    Text(
+                      'Overview',
+                      style: TextStyle(
+                        color: Theme.of(context).primaryColor,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Tab(
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Icon(Icons.history),
+                    const SizedBox(width: 8),
+                    Text(
+                      'Activity',
+                      style: TextStyle(
+                        color: Theme.of(context).primaryColor,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+            labelColor: Theme.of(context).primaryColor,
+            unselectedLabelColor: Colors.grey,
+            indicatorColor: Theme.of(context).primaryColor,
+          ),
+        ),
+        body: TabBarView(
+          children: [
+            // Overview Tab
+            RefreshIndicator(
+              onRefresh: () async {
+                setState(() {
+                  _loadData();
+                });
               },
-            );
-          },
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'EXPENSE OVERVIEW',
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.grey,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    FutureBuilder<Map<String, dynamic>>(
+                      future: _balancesFuture,
+                      builder: (context, snapshot) {
+                        if (snapshot.connectionState == ConnectionState.waiting) {
+                          return const SizedBox(
+                            height: 200,
+                            child: Center(child: CircularProgressIndicator()),
+                          );
+                        }
+
+                        if (snapshot.hasError || !snapshot.hasData) {
+                          return const SizedBox(
+                            height: 200,
+                            child: Center(child: Text('Failed to load balance data')),
+                          );
+                        }
+
+                        return ExpenseOverviewChart(balances: snapshot.data!);
+                      },
+                    ),
+                  ],
+                ),
+              ),
+            ),
+
+            // Activity Tab
+            RefreshIndicator(
+              onRefresh: () async {
+                setState(() {
+                  _loadData();
+                });
+              },
+              child: FutureBuilder<List<Map<String, dynamic>>>(
+                future: _activitiesFuture,
+                builder: (context, snapshot) {
+                  if (snapshot.connectionState == ConnectionState.waiting) {
+                    return const Center(child: CircularProgressIndicator());
+                  }
+
+                  if (snapshot.hasError) {
+                    return Center(child: Text('Error: ${snapshot.error}'));
+                  }
+
+                  final activities = snapshot.data ?? [];
+                  
+                  if (activities.isEmpty) {
+                    return Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            Icons.history,
+                            size: 64,
+                            color: Colors.grey.shade400,
+                          ),
+                          const SizedBox(height: 16),
+                          Text(
+                            'No recent activity',
+                            style: TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.grey.shade600,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            'Add some expenses to see activity here',
+                            style: TextStyle(
+                              color: Colors.grey.shade600,
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  }
+                  
+                  return ListView.builder(
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                    itemCount: activities.length,
+                    itemBuilder: (context, index) {
+                      final activity = activities[index];
+                      return ActivityListItem(
+                        activity: activity,
+                        userId: widget.userId,
+                      );
+                    },
+                  );
+                },
+              ),
+            ),
+          ],
         ),
       ),
+    );
+  }
+}
+
+// Expense Overview Chart
+class ExpenseOverviewChart extends StatelessWidget {
+  final Map<String, dynamic> balances;
+
+  const ExpenseOverviewChart({
+    super.key,
+    required this.balances,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final userBalances = List<Map<String, dynamic>>.from(balances['userBalances']);
+    final owedBalances = userBalances.where((b) => b['type'] == 'owed').toList();
+    final oweBalances = userBalances.where((b) => b['type'] == 'owe').toList();
+
+    // Sort balances by amount
+    owedBalances.sort((a, b) => (b['amount'] as num).compareTo(a['amount'] as num));
+    oweBalances.sort((a, b) => (b['amount'] as num).compareTo(a['amount'] as num));
+
+    // Take top 5 for each category
+    final topOwed = owedBalances.take(5).toList();
+    final topOwe = oweBalances.take(5).toList();
+
+    // Calculate total amounts
+    final totalOwed = owedBalances.fold<double>(0, (sum, b) => sum + (b['amount'] as num));
+    final totalOwe = oweBalances.fold<double>(0, (sum, b) => sum + (b['amount'] as num));
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Summary cards
+        Row(
+          children: [
+            Expanded(
+              child: Card(
+                elevation: 2,
+                child: Padding(
+                  padding: const EdgeInsets.all(16.0),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(8),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF1CC29F).withOpacity(0.1),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: const Icon(
+                              Icons.arrow_upward,
+                              color: Color(0xFF1CC29F),
+                              size: 20,
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          const Text(
+                            'you are owed',
+                            style: TextStyle(
+                              color: Colors.grey,
+                              fontSize: 14,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'PKR ${totalOwed.toStringAsFixed(0)}',
+                        style: const TextStyle(
+                          fontSize: 24,
+                          fontWeight: FontWeight.bold,
+                          color: Color(0xFF1CC29F),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Card(
+                elevation: 2,
+                child: Padding(
+                  padding: const EdgeInsets.all(16.0),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(8),
+                            decoration: BoxDecoration(
+                              color: Colors.orange.withOpacity(0.1),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: const Icon(
+                              Icons.arrow_downward,
+                              color: Colors.orange,
+                              size: 20,
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          const Text(
+                            'you owe',
+                            style: TextStyle(
+                              color: Colors.grey,
+                              fontSize: 14,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'PKR ${totalOwe.toStringAsFixed(0)}',
+                        style: const TextStyle(
+                          fontSize: 24,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.orange,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 24),
+
+        // Charts
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // You are owed
+            if (topOwed.isNotEmpty)
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Top owed by',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.grey.shade800,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    SizedBox(
+                      height: 200,
+                      child: BarChart(
+                        BarChartData(
+                          alignment: BarChartAlignment.spaceAround,
+                          maxY: topOwed.isEmpty ? 10 : (topOwed.first['amount'] * 1.2),
+                          titlesData: FlTitlesData(
+                            show: true,
+                            rightTitles: const AxisTitles(
+                              sideTitles: SideTitles(showTitles: false),
+                            ),
+                            topTitles: const AxisTitles(
+                              sideTitles: SideTitles(showTitles: false),
+                            ),
+                            leftTitles: AxisTitles(
+                              sideTitles: SideTitles(
+                                showTitles: true,
+                                getTitlesWidget: (value, meta) {
+                                  // Format large numbers with K suffix
+                                  String formattedValue;
+                                  if (value >= 1000) {
+                                    formattedValue = '${(value / 1000).toStringAsFixed(0)}K';
+                                  } else {
+                                    formattedValue = value.toInt().toString();
+                                  }
+                                  return Padding(
+                                    padding: const EdgeInsets.only(right: 8),
+                                    child: Text(
+                                      'PKR $formattedValue',
+                                      style: TextStyle(
+                                        color: Colors.grey.shade600,
+                                        fontSize: 10,
+                                      ),
+                                    ),
+                                  );
+                                },
+                                reservedSize: 60,
+                                interval: (topOwed.first['amount'] / 4).roundToDouble(),
+                              ),
+                            ),
+                            bottomTitles: AxisTitles(
+                              sideTitles: SideTitles(
+                                showTitles: true,
+                                getTitlesWidget: (value, meta) {
+                                  if (value.toInt() >= topOwed.length) return const Text('');
+                                  return Padding(
+                                    padding: const EdgeInsets.only(top: 8),
+                                    child: Text(
+                                      topOwed[value.toInt()]['name'].toString().split(' ')[0],
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        color: Colors.grey.shade800,
+                                        fontWeight: FontWeight.w500,
+                                      ),
+                                    ),
+                                  );
+                                },
+                              ),
+                            ),
+                          ),
+                          borderData: FlBorderData(show: false),
+                          gridData: FlGridData(
+                            show: true,
+                            drawVerticalLine: false,
+                            horizontalInterval: topOwed.first['amount'] / 5,
+                            getDrawingHorizontalLine: (value) {
+                              return FlLine(
+                                color: Colors.grey.shade200,
+                                strokeWidth: 1,
+                              );
+                            },
+                          ),
+                          barGroups: List.generate(
+                            topOwed.length,
+                            (index) => BarChartGroupData(
+                              x: index,
+                              barRods: [
+                                BarChartRodData(
+                                  toY: topOwed[index]['amount'],
+                                  color: const Color(0xFF1CC29F),
+                                  width: 16,
+                                  borderRadius: const BorderRadius.vertical(
+                                    top: Radius.circular(4),
+                                    bottom: Radius.circular(0),
+                                  ),
+                                  backDrawRodData: BackgroundBarChartRodData(
+                                    show: true,
+                                    toY: topOwed.first['amount'] * 1.2,
+                                    color: Colors.grey.shade100,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            if (topOwed.isNotEmpty && topOwe.isNotEmpty)
+              const SizedBox(width: 24),
+            // You owe
+            if (topOwe.isNotEmpty)
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Top you owe',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.grey.shade800,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    SizedBox(
+                      height: 200,
+                      child: BarChart(
+                        BarChartData(
+                          alignment: BarChartAlignment.spaceAround,
+                          maxY: topOwe.isEmpty ? 10 : (topOwe.first['amount'] * 1.2),
+                          titlesData: FlTitlesData(
+                            show: true,
+                            rightTitles: const AxisTitles(
+                              sideTitles: SideTitles(showTitles: false),
+                            ),
+                            topTitles: const AxisTitles(
+                              sideTitles: SideTitles(showTitles: false),
+                            ),
+                            leftTitles: AxisTitles(
+                              sideTitles: SideTitles(
+                                showTitles: true,
+                                getTitlesWidget: (value, meta) {
+                                  // Format large numbers with K suffix
+                                  String formattedValue;
+                                  if (value >= 1000) {
+                                    formattedValue = '${(value / 1000).toStringAsFixed(0)}K';
+                                  } else {
+                                    formattedValue = value.toInt().toString();
+                                  }
+                                  return Padding(
+                                    padding: const EdgeInsets.only(right: 8),
+                                    child: Text(
+                                      'PKR $formattedValue',
+                                      style: TextStyle(
+                                        color: Colors.grey.shade600,
+                                        fontSize: 10,
+                                      ),
+                                    ),
+                                  );
+                                },
+                                reservedSize: 60,
+                                interval: (topOwe.first['amount'] / 4).roundToDouble(),
+                              ),
+                            ),
+                            bottomTitles: AxisTitles(
+                              sideTitles: SideTitles(
+                                showTitles: true,
+                                getTitlesWidget: (value, meta) {
+                                  if (value.toInt() >= topOwe.length) return const Text('');
+                                  return Padding(
+                                    padding: const EdgeInsets.only(top: 8),
+                                    child: Text(
+                                      topOwe[value.toInt()]['name'].toString().split(' ')[0],
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        color: Colors.grey.shade800,
+                                        fontWeight: FontWeight.w500,
+                                      ),
+                                    ),
+                                  );
+                                },
+                              ),
+                            ),
+                          ),
+                          borderData: FlBorderData(show: false),
+                          gridData: FlGridData(
+                            show: true,
+                            drawVerticalLine: false,
+                            horizontalInterval: topOwe.first['amount'] / 5,
+                            getDrawingHorizontalLine: (value) {
+                              return FlLine(
+                                color: Colors.grey.shade200,
+                                strokeWidth: 1,
+                              );
+                            },
+                          ),
+                          barGroups: List.generate(
+                            topOwe.length,
+                            (index) => BarChartGroupData(
+                              x: index,
+                              barRods: [
+                                BarChartRodData(
+                                  toY: topOwe[index]['amount'],
+                                  color: Colors.orange,
+                                  width: 16,
+                                  borderRadius: const BorderRadius.vertical(
+                                    top: Radius.circular(4),
+                                    bottom: Radius.circular(0),
+                                  ),
+                                  backDrawRodData: BackgroundBarChartRodData(
+                                    show: true,
+                                    toY: topOwe.first['amount'] * 1.2,
+                                    color: Colors.grey.shade100,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+          ],
+        ),
+      ],
     );
   }
 }
@@ -3158,10 +4379,104 @@ class ActivityListItem extends StatelessWidget {
 }
 
 // Account Tab
-class AccountTab extends StatelessWidget {
+class AccountTab extends StatefulWidget {
   final Map<String, dynamic> user;
 
   const AccountTab({super.key, required this.user});
+
+  @override
+  State<AccountTab> createState() => _AccountTabState();
+}
+
+class _AccountTabState extends State<AccountTab> {
+  bool _notificationsEnabled = true;
+  dynamic _profileImage;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadProfileImage();
+  }
+
+  Future<void> _showCurrencyPicker() async {
+    final Currency? result = await showDialog<Currency>(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Text('Select Currency'),
+          content: ListenableBuilder(
+            listenable: CurrencyNotifier(),
+            builder: (context, _) {
+              return SizedBox(
+                width: double.maxFinite,
+                child: ListView.builder(
+                  shrinkWrap: true,
+                  itemCount: currencies.length,
+                  itemBuilder: (BuildContext context, int index) {
+                    final currency = currencies[index];
+                    return ListTile(
+                      leading: Text(currency.symbol),
+                      title: Text(currency.name),
+                      subtitle: Text(currency.code),
+                      selected: currency.code == CurrencyNotifier().currency.code,
+                      onTap: () {
+                        Navigator.of(context).pop(currency);
+                      },
+                    );
+                  },
+                ),
+              );
+            },
+          ),
+        );
+      },
+    );
+
+    if (result != null) {
+      await CurrencyNotifier().setCurrency(result);
+    }
+  }
+
+  Future<void> _loadProfileImage() async {
+    final image = await DatabaseService().getProfileImage(
+      widget.user['id'],
+      widget.user['profilePicture'],
+    );
+    if (mounted) {
+      setState(() {
+        _profileImage = image;
+      });
+    }
+  }
+
+  Widget _buildProfileImage() {
+    if (_profileImage == null) {
+      return Text(
+        widget.user['name'].substring(0, 1).toUpperCase(),
+        style: const TextStyle(color: Colors.white),
+      );
+    }
+
+    if (kIsWeb) {
+      return ClipOval(
+        child: Image.memory(
+          base64Decode(_profileImage),
+          fit: BoxFit.cover,
+          width: 40,
+          height: 40,
+        ),
+      );
+    }
+
+    return ClipOval(
+      child: Image.file(
+        _profileImage,
+        fit: BoxFit.cover,
+        width: 40,
+        height: 40,
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -3169,136 +4484,216 @@ class AccountTab extends StatelessWidget {
       appBar: AppBar(
         title: const Text('Account'),
       ),
-      body: ListView(
-        children: [
-          const Padding(
-            padding: EdgeInsets.all(16.0),
-            child: Text(
-              'Settings',
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-                color: Colors.grey,
-              ),
-            ),
-          ),
-          ListTile(
-            leading: CircleAvatar(
-              backgroundColor: Colors.red.shade700,
-              child: Text(
-                user['name'].substring(0, 1).toUpperCase(),
-                style: const TextStyle(color: Colors.white),
-              ),
-            ),
-            title: Text(
-              user['name'],
-              style: const TextStyle(fontWeight: FontWeight.bold),
-            ),
-            subtitle: Text(user['email']),
-            trailing: const Icon(Icons.camera_alt),
-            onTap: () {
-              // Edit profile
-              Navigator.of(context).push(
-                MaterialPageRoute(
-                  builder: (_) => EditProfilePage(user: user),
+      body: ListenableBuilder(
+        listenable: ThemeNotifier(),
+        builder: (context, child) {
+          final isDark = ThemeNotifier().themeMode == ThemeMode.dark;
+          return ListView(
+            children: [
+              // Profile Section
+              ListTile(
+                leading: CircleAvatar(
+                  backgroundColor: Colors.red.shade700,
+                  child: _buildProfileImage(),
                 ),
-              );
-            },
-          ),
-          const Divider(),
-          ListTile(
-            leading: const Icon(Icons.qr_code),
-            title: const Text('Scan code'),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () {
-              // Scan QR code
-            },
-          ),
-          ListTile(
-            leading: const Icon(Icons.diamond, color: Colors.purple),
-            title: const Text('Splitwise Pro'),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () {
-              // Upgrade to Pro
-            },
-          ),
-          const Divider(),
-          const Padding(
-            padding: EdgeInsets.all(16.0),
-            child: Text(
-              'Preferences',
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-                color: Colors.grey,
-              ),
-            ),
-          ),
-          ListTile(
-            leading: const Icon(Icons.notifications),
-            title: const Text('Notifications'),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () {
-              // Notification settings
-            },
-          ),
-          ListTile(
-            leading: const Icon(Icons.security),
-            title: const Text('Security'),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () {
-              // Security settings
-            },
-          ),
-          const Divider(),
-          const Padding(
-            padding: EdgeInsets.all(16.0),
-            child: Text(
-              'Feedback',
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-                color: Colors.grey,
-              ),
-            ),
-          ),
-          ListTile(
-            leading: const Icon(Icons.star),
-            title: const Text('Rate Splitwise'),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () {
-              // Rate app
-            },
-          ),
-          ListTile(
-            leading: const Icon(Icons.contact_support),
-            title: const Text('Contact us'),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () {
-              // Contact support
-            },
-          ),
-          const SizedBox(height: 16),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16.0),
-            child: ElevatedButton(
-              onPressed: () async {
-                await AuthService().logout();
-                if (context.mounted) {
-                  Navigator.of(context).pushAndRemoveUntil(
-                    MaterialPageRoute(builder: (_) => const WelcomePage()),
-                    (route) => false,
+                title: Text(
+                  widget.user['name'],
+                  style: const TextStyle(fontWeight: FontWeight.bold),
+                ),
+                subtitle: Text(widget.user['email']),
+                trailing: const Icon(Icons.camera_alt),
+                onTap: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => EditProfilePage(user: widget.user),
+                    ),
                   );
-                }
-              },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.red,
+                },
               ),
-              child: const Text('Log out'),
-            ),
-          ),
-          const SizedBox(height: 32),
-        ],
+              const Divider(),
+
+              // Settings Section
+              ExpansionTile(
+                leading: const Icon(Icons.settings),
+                title: const Text('Settings'),
+                children: [
+                  // Currency
+                  ListenableBuilder(
+                    listenable: CurrencyNotifier(),
+                    builder: (context, _) {
+                      final currency = CurrencyNotifier().currency;
+                      return ListTile(
+                        leading: const Icon(Icons.currency_exchange),
+                        title: const Text('Currency'),
+                        subtitle: Text('${currency.code} - ${currency.name}'),
+                        trailing: Text(
+                          currency.symbol,
+                          style: const TextStyle(fontSize: 18),
+                        ),
+                        onTap: _showCurrencyPicker,
+                      );
+                    },
+                  ),
+                  // Theme
+                  SwitchListTile(
+                    secondary: const Icon(Icons.dark_mode),
+                    title: const Text('Dark Mode'),
+                    subtitle: Text(isDark ? 'Dark theme enabled' : 'Light theme enabled'),
+                    value: isDark,
+                    onChanged: (value) {
+                      ThemeNotifier().setThemeMode(
+                        value ? ThemeMode.dark : ThemeMode.light,
+                      );
+                    },
+                  ),
+                ],
+              ),
+
+              // Preferences Section
+              ExpansionTile(
+                leading: const Icon(Icons.tune),
+                title: const Text('Preferences'),
+                children: [
+                  // Notifications
+                  SwitchListTile(
+                    secondary: const Icon(Icons.notifications),
+                    title: const Text('Notifications'),
+                    subtitle: const Text('Enable push notifications'),
+                    value: _notificationsEnabled,
+                    onChanged: (bool value) {
+                      setState(() {
+                        _notificationsEnabled = value;
+                      });
+                    },
+                  ),
+                  // Default Split
+                  ListTile(
+                    leading: const Icon(Icons.people),
+                    title: const Text('Default Split'),
+                    subtitle: const Text('Equal split'),
+                    onTap: () {
+                      // Default split settings
+                    },
+                  ),
+                  // Categories
+                  ListTile(
+                    leading: const Icon(Icons.category),
+                    title: const Text('Categories'),
+                    subtitle: const Text('Manage expense categories'),
+                    onTap: () {
+                      // Categories settings
+                    },
+                  ),
+                ],
+              ),
+
+              // Security Section
+              ExpansionTile(
+                leading: const Icon(Icons.security),
+                title: const Text('Security'),
+                children: [
+                  // Change Password
+                  ListTile(
+                    leading: const Icon(Icons.lock),
+                    title: const Text('Change Password'),
+                    onTap: () {
+                      // Change password
+                    },
+                  ),
+                  // Reset Password
+                  ListTile(
+                    leading: const Icon(Icons.restore),
+                    title: const Text('Reset Password'),
+                    onTap: () {
+                      // Reset password
+                    },
+                  ),
+                  // Privacy Settings
+                  ListTile(
+                    leading: const Icon(Icons.privacy_tip),
+                    title: const Text('Privacy Settings'),
+                    onTap: () {
+                      // Privacy settings
+                    },
+                  ),
+                  // Login Activity
+                  ListTile(
+                    leading: const Icon(Icons.history),
+                    title: const Text('Login Activity'),
+                    onTap: () {
+                      // Login activity
+                    },
+                  ),
+                ],
+              ),
+
+              // Help & Support Section
+              ExpansionTile(
+                leading: const Icon(Icons.help),
+                title: const Text('Help & Support'),
+                children: [
+                  // Contact Us
+                  ListTile(
+                    leading: const Icon(Icons.email),
+                    title: const Text('Contact Us'),
+                    subtitle: const Text('ask@billsplitter.com'),
+                    onTap: () {
+                      // Launch email client
+                    },
+                  ),
+                  // FAQs
+                  ListTile(
+                    leading: const Icon(Icons.question_answer),
+                    title: const Text('FAQs'),
+                    onTap: () {
+                      // Show FAQs
+                    },
+                  ),
+                  // Terms & Conditions
+                  ListTile(
+                    leading: const Icon(Icons.description),
+                    title: const Text('Terms & Conditions'),
+                    onTap: () {
+                      // Show terms
+                    },
+                  ),
+                  // Privacy Policy
+                  ListTile(
+                    leading: const Icon(Icons.policy),
+                    title: const Text('Privacy Policy'),
+                    onTap: () {
+                      // Show privacy policy
+                    },
+                  ),
+                ],
+              ),
+
+              const SizedBox(height: 16),
+              
+              // Log Out Button
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                child: ElevatedButton(
+                  onPressed: () async {
+                    await AuthService().logout();
+                    if (context.mounted) {
+                      Navigator.of(context).pushAndRemoveUntil(
+                        MaterialPageRoute(builder: (_) => const WelcomePage()),
+                        (route) => false,
+                      );
+                    }
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.red,
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                  ),
+                  child: const Text('Log out'),
+                ),
+              ),
+              const SizedBox(height: 32),
+            ],
+          );
+        },
       ),
     );
   }
@@ -3318,7 +4713,9 @@ class _EditProfilePageState extends State<EditProfilePage> {
   final _formKey = GlobalKey<FormState>();
   late TextEditingController _nameController;
   late TextEditingController _emailController;
-  File? _profileImage;
+  dynamic _newProfileImage;
+  Uint8List? _webImage;
+  dynamic _currentProfileImage;
   bool _isLoading = false;
 
   @override
@@ -3326,17 +4723,77 @@ class _EditProfilePageState extends State<EditProfilePage> {
     super.initState();
     _nameController = TextEditingController(text: widget.user['name']);
     _emailController = TextEditingController(text: widget.user['email']);
+    _loadCurrentProfileImage();
+  }
+
+  Future<void> _loadCurrentProfileImage() async {
+    final image = await DatabaseService().getProfileImage(
+      widget.user['id'],
+      widget.user['profilePicture'],
+    );
+    if (mounted) {
+      setState(() {
+        _currentProfileImage = image;
+      });
+    }
   }
 
   Future<void> _pickImage() async {
-    final picker = ImagePicker();
-    final pickedFile = await picker.pickImage(source: ImageSource.gallery);
-    
-    if (pickedFile != null) {
-      setState(() {
-        _profileImage = File(pickedFile.path);
-      });
+    try {
+      final picker = ImagePicker();
+      final pickedFile = await picker.pickImage(
+        source: ImageSource.gallery,
+        maxWidth: 800,
+        maxHeight: 800,
+        imageQuality: 85,
+      );
+      
+      if (pickedFile != null) {
+        if (kIsWeb) {
+          // Handle web platform
+          final bytes = await pickedFile.readAsBytes();
+          setState(() {
+            _webImage = bytes;
+            _newProfileImage = pickedFile;
+          });
+        } else {
+          // Handle mobile platform
+          setState(() {
+            _newProfileImage = File(pickedFile.path);
+          });
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Failed to pick image')),
+        );
+      }
     }
+  }
+
+  Widget _buildProfileImage() {
+    if (_webImage != null) {
+      return Image.memory(_webImage!, fit: BoxFit.cover);
+    }
+
+    if (_newProfileImage != null && !kIsWeb) {
+      return Image.file(_newProfileImage!, fit: BoxFit.cover);
+    }
+
+    if (_currentProfileImage != null) {
+      if (kIsWeb && _currentProfileImage is String) {
+        return Image.memory(base64Decode(_currentProfileImage), fit: BoxFit.cover);
+      }
+      if (!kIsWeb && _currentProfileImage is File) {
+        return Image.file(_currentProfileImage, fit: BoxFit.cover);
+      }
+    }
+
+    return Text(
+      widget.user['name'].substring(0, 1).toUpperCase(),
+      style: const TextStyle(fontSize: 40, color: Colors.white),
+    );
   }
 
   Future<void> _saveProfile() async {
@@ -3347,12 +4804,20 @@ class _EditProfilePageState extends State<EditProfilePage> {
     });
     
     try {
+      String? profilePicturePath = widget.user['profilePicture'];
+      
+      if (_newProfileImage != null) {
+        profilePicturePath = await DatabaseService().saveProfileImage(
+          widget.user['id'],
+          _newProfileImage!,
+        );
+      }
+      
       final updatedUser = {
         ...widget.user,
         'name': _nameController.text.trim(),
         'email': _emailController.text.trim(),
-        // In a real app, you would upload the image and store the URL
-        'profilePicture': _profileImage != null ? 'profile_image_url' : widget.user['profilePicture'],
+        'profilePicture': profilePicturePath,
       };
       
       final success = await AuthService().updateProfile(updatedUser);
@@ -3369,7 +4834,7 @@ class _EditProfilePageState extends State<EditProfilePage> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('An error occurred')),
+          const SnackBar(content: Text('An error occurred while saving profile')),
         );
       }
     } finally {
@@ -3405,18 +4870,13 @@ class _EditProfilePageState extends State<EditProfilePage> {
                   CircleAvatar(
                     radius: 60,
                     backgroundColor: Colors.red.shade700,
-                    backgroundImage: _profileImage != null
-                        ? FileImage(_profileImage!)
-                        : null,
-                    child: _profileImage == null
-                        ? Text(
-                            widget.user['name'].substring(0, 1).toUpperCase(),
-                            style: const TextStyle(
-                              fontSize: 40,
-                              color: Colors.white,
-                            ),
-                          )
-                        : null,
+                    child: ClipOval(
+                      child: SizedBox(
+                        width: 120,
+                        height: 120,
+                        child: _buildProfileImage(),
+                      ),
+                    ),
                   ),
                   Positioned(
                     bottom: 0,
@@ -3484,4 +4944,10 @@ class _EditProfilePageState extends State<EditProfilePage> {
       ),
     );
   }
-  }
+}
+
+// Helper function to format currency
+String formatCurrency(double amount) {
+  final currency = CurrencyNotifier().currency;
+  return '${currency.symbol} ${amount.abs().toStringAsFixed(2)}';
+}
