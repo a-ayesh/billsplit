@@ -1636,8 +1636,8 @@ class _GroupsTabState extends State<GroupsTab> {
     if (mounted) {
       showDialog(
         context: context,
-        builder: (context) => StatefulBuilder(
-          builder: (context, setState) => AlertDialog(
+        builder: (dialogContext) => StatefulBuilder(
+          builder: (context, setDialogState) => AlertDialog(
             title: const Text('Create a new group'),
             content: SingleChildScrollView(
               child: Column(
@@ -1662,7 +1662,7 @@ class _GroupsTabState extends State<GroupsTab> {
                     subtitle: Text(friend['email']),
                     value: selectedFriends.contains(friend['id']),
                     onChanged: (bool? value) {
-                      setState(() {
+                      setDialogState(() {
                         if (value == true) {
                           selectedFriends.add(friend['id']);
                         } else {
@@ -1676,7 +1676,7 @@ class _GroupsTabState extends State<GroupsTab> {
             ),
             actions: [
               TextButton(
-                onPressed: () => Navigator.of(context).pop(),
+                onPressed: () => Navigator.of(dialogContext).pop(),
                 child: const Text('Cancel'),
               ),
               ElevatedButton(
@@ -1723,7 +1723,8 @@ class _GroupsTabState extends State<GroupsTab> {
                   await DatabaseService().addGroup(newGroup);
                   
                   if (mounted) {
-                    Navigator.of(context).pop();
+                    Navigator.of(dialogContext).pop();
+                    // Use the parent widget's setState to refresh the groups list
                     setState(() {
                       _loadData();
                     });
