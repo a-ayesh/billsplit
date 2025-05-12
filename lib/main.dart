@@ -1,18 +1,3331 @@
+import 'dart:convert';
+import 'dart:io';
+import 'dart:math';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:intl/intl.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:uuid/uuid.dart';
+import 'dart:html' as html;
+import 'package:flutter/foundation.dart' show kIsWeb;
 
-void main() {
-  runApp(const MainApp());
+void main() async {
+  try {
+    print('Starting app...');
+    WidgetsFlutterBinding.ensureInitialized();
+    print('Flutter bindings initialized');
+    
+    runApp(const SplitWiseApp());
+    print('App started');
+  } catch (e) {
+    print('Error starting app: $e');
+    rethrow;
+  }
 }
 
-class MainApp extends StatelessWidget {
-  const MainApp({super.key});
+class SplitWiseApp extends StatelessWidget {
+  const SplitWiseApp({super.key});
 
   @override
   Widget build(BuildContext context) {
-    return const MaterialApp(
-      home: Scaffold(
-        body: Center(
-          child: Text('Hello World!'),
+    return MaterialApp(
+      title: 'Splitwise',
+      debugShowCheckedModeBanner: false,
+      theme: ThemeData(
+        primaryColor: const Color(0xFF1CC29F),
+        colorScheme: ColorScheme.fromSeed(
+          seedColor: const Color(0xFF1CC29F),
+          primary: const Color(0xFF1CC29F),
+          secondary: const Color(0xFF8A2BE2),
+          background: Colors.white,
+        ),
+        fontFamily: 'Roboto',
+        appBarTheme: const AppBarTheme(
+          backgroundColor: Colors.white,
+          foregroundColor: Colors.black,
+          elevation: 0,
+        ),
+        elevatedButtonTheme: ElevatedButtonThemeData(
+          style: ElevatedButton.styleFrom(
+            backgroundColor: const Color(0xFF1CC29F),
+            foregroundColor: Colors.white,
+            minimumSize: const Size(double.infinity, 50),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(8),
+            ),
+          ),
+        ),
+        textButtonTheme: TextButtonThemeData(
+          style: TextButton.styleFrom(
+            foregroundColor: const Color(0xFF1CC29F),
+          ),
+        ),
+        inputDecorationTheme: InputDecorationTheme(
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(8),
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(8),
+            borderSide: const BorderSide(color: Color(0xFF1CC29F), width: 2),
+          ),
+        ),
+      ),
+      home: const SplashScreen(),
+    );
+  }
+}
+
+// Database Service
+class DatabaseService {
+  static final DatabaseService _instance = DatabaseService._internal();
+  factory DatabaseService() => _instance;
+  DatabaseService._internal();
+
+  final String _usersFileName = 'users.json';
+  final String _groupsFileName = 'groups.json';
+  final String _expensesFileName = 'expenses.json';
+  final String _activitiesFileName = 'activities.json';
+  final String _settlementsFileName = 'settlements.json';
+
+  Future<String> get _localPath async {
+    if (kIsWeb) {
+      return '';  // Web doesn't need a path
+    }
+    final directory = await getApplicationDocumentsDirectory();
+    return directory.path;
+  }
+
+  Future<String> _readWebFile(String fileName) async {
+    final storage = html.window.localStorage;
+    return storage[fileName] ?? '[]';
+  }
+
+  Future<void> _writeWebFile(String fileName, String contents) async {
+    final storage = html.window.localStorage;
+    storage[fileName] = contents;
+  }
+
+  Future<void> _createFileIfNotExists(String fileName) async {
+    try {
+      print('Creating file if not exists: $fileName');
+      if (kIsWeb) {
+        final storage = html.window.localStorage;
+        if (!storage.containsKey(fileName)) {
+          print('File does not exist in web storage, creating: $fileName');
+          storage[fileName] = '[]';
+        }
+        print('File exists in web storage: $fileName');
+        return;
+      }
+
+      final file = await _getFile(fileName);
+      if (!await file.exists()) {
+        print('File does not exist, creating: $fileName');
+        await file.create();
+        await file.writeAsString('[]');
+        print('File created and initialized: $fileName');
+      } else {
+        print('File already exists: $fileName');
+      }
+    } catch (e) {
+      print('Error creating file $fileName: $e');
+      rethrow;
+    }
+  }
+
+  Future<List<Map<String, dynamic>>> _readJsonFile(String fileName) async {
+    try {
+      String contents;
+      if (kIsWeb) {
+        contents = await _readWebFile(fileName);
+      } else {
+        final file = await _getFile(fileName);
+        contents = await file.readAsString();
+      }
+      return List<Map<String, dynamic>>.from(jsonDecode(contents));
+    } catch (e) {
+      print('Error reading file $fileName: $e');
+      return [];
+    }
+  }
+
+  Future<void> _writeJsonFile(String fileName, List<Map<String, dynamic>> data) async {
+    try {
+      final contents = jsonEncode(data);
+      if (kIsWeb) {
+        await _writeWebFile(fileName, contents);
+      } else {
+        final file = await _getFile(fileName);
+        await file.writeAsString(contents);
+      }
+    } catch (e) {
+      print('Error writing file $fileName: $e');
+      rethrow;
+    }
+  }
+
+  Future<File> _getFile(String fileName) async {
+    if (kIsWeb) throw UnsupportedError('Web platform does not support File operations');
+    final path = await _localPath;
+    return File('$path/$fileName');
+  }
+
+  Future<void> initializeDatabase() async {
+    try {
+      print('Starting database initialization...');
+      await _createFileIfNotExists(_usersFileName);
+      await _createFileIfNotExists(_groupsFileName);
+      await _createFileIfNotExists(_expensesFileName);
+      await _createFileIfNotExists(_activitiesFileName);
+      await _createFileIfNotExists(_settlementsFileName);
+      print('Database initialization completed');
+    } catch (e) {
+      print('Error during database initialization: $e');
+      rethrow;
+    }
+  }
+
+  // User Methods
+  Future<List<Map<String, dynamic>>> getUsers() async {
+    return _readJsonFile(_usersFileName);
+  }
+
+  Future<Map<String, dynamic>?> getUserByEmail(String email) async {
+    final users = await getUsers();
+    try {
+      return users.firstWhere((user) => user['email'] == email);
+    } catch (e) {
+      return null;
+    }
+  }
+
+  Future<Map<String, dynamic>?> getUserById(String id) async {
+    final users = await getUsers();
+    try {
+      return users.firstWhere((user) => user['id'] == id);
+    } catch (e) {
+      return null;
+    }
+  }
+
+  Future<void> addUser(Map<String, dynamic> user) async {
+    final users = await getUsers();
+    users.add(user);
+    await _writeJsonFile(_usersFileName, users);
+  }
+
+  Future<void> updateUser(Map<String, dynamic> updatedUser) async {
+    final users = await getUsers();
+    final index = users.indexWhere((user) => user['id'] == updatedUser['id']);
+    if (index != -1) {
+      users[index] = updatedUser;
+      await _writeJsonFile(_usersFileName, users);
+    }
+  }
+
+  // Group Methods
+  Future<List<Map<String, dynamic>>> getGroups() async {
+    return _readJsonFile(_groupsFileName);
+  }
+
+  Future<List<Map<String, dynamic>>> getGroupsByUserId(String userId) async {
+    final groups = await getGroups();
+    return groups.where((group) => 
+      (group['members'] as List).any((member) => member['id'] == userId)
+    ).toList();
+  }
+
+  Future<Map<String, dynamic>?> getGroupById(String id) async {
+    final groups = await getGroups();
+    try {
+      return groups.firstWhere((group) => group['id'] == id);
+    } catch (e) {
+      return null;
+    }
+  }
+
+  Future<void> addGroup(Map<String, dynamic> group) async {
+    final groups = await getGroups();
+    groups.add(group);
+    await _writeJsonFile(_groupsFileName, groups);
+  }
+
+  Future<void> updateGroup(Map<String, dynamic> updatedGroup) async {
+    final groups = await getGroups();
+    final index = groups.indexWhere((group) => group['id'] == updatedGroup['id']);
+    if (index != -1) {
+      groups[index] = updatedGroup;
+      await _writeJsonFile(_groupsFileName, groups);
+    }
+  }
+
+  // Expense Methods
+  Future<List<Map<String, dynamic>>> getExpenses() async {
+    return _readJsonFile(_expensesFileName);
+  }
+
+  Future<List<Map<String, dynamic>>> getExpensesByGroupId(String groupId) async {
+    final expenses = await getExpenses();
+    return expenses.where((expense) => expense['groupId'] == groupId).toList();
+  }
+
+  Future<List<Map<String, dynamic>>> getExpensesByUserId(String userId) async {
+    final expenses = await getExpenses();
+    return expenses.where((expense) => 
+      expense['paidBy'] == userId || 
+      (expense['splitWith'] as List).any((split) => split['userId'] == userId)
+    ).toList();
+  }
+
+  Future<void> addExpense(Map<String, dynamic> expense) async {
+    final expenses = await getExpenses();
+    expenses.add(expense);
+    await _writeJsonFile(_expensesFileName, expenses);
+  }
+
+  Future<void> updateExpense(Map<String, dynamic> updatedExpense) async {
+    final expenses = await getExpenses();
+    final index = expenses.indexWhere((expense) => expense['id'] == updatedExpense['id']);
+    if (index != -1) {
+      expenses[index] = updatedExpense;
+      await _writeJsonFile(_expensesFileName, expenses);
+    }
+  }
+
+  // Activity Methods
+  Future<List<Map<String, dynamic>>> getActivities() async {
+    return _readJsonFile(_activitiesFileName);
+  }
+
+  Future<List<Map<String, dynamic>>> getActivitiesByUserId(String userId) async {
+    final activities = await getActivities();
+    return activities.where((activity) => 
+      activity['userId'] == userId || 
+      activity['relatedUserId'] == userId
+    ).toList()..sort((a, b) => 
+      DateTime.parse(b['timestamp']).compareTo(DateTime.parse(a['timestamp']))
+    );
+  }
+
+  Future<void> addActivity(Map<String, dynamic> activity) async {
+    final activities = await getActivities();
+    activities.add(activity);
+    await _writeJsonFile(_activitiesFileName, activities);
+  }
+
+  // Settlement Methods
+  Future<List<Map<String, dynamic>>> getSettlements() async {
+    return _readJsonFile(_settlementsFileName);
+  }
+
+  Future<List<Map<String, dynamic>>> getSettlementsByUserId(String userId) async {
+    final settlements = await getSettlements();
+    return settlements.where((settlement) => 
+      settlement['payerId'] == userId || settlement['payeeId'] == userId
+    ).toList();
+  }
+
+  Future<void> addSettlement(Map<String, dynamic> settlement) async {
+    final settlements = await getSettlements();
+    settlements.add(settlement);
+    await _writeJsonFile(_settlementsFileName, settlements);
+  }
+
+  // Balance Calculation
+  Future<Map<String, dynamic>> calculateBalances(String userId) async {
+    final expenses = await getExpenses();
+    final settlements = await getSettlements();
+    final users = await getUsers();
+    
+    Map<String, double> balances = {};
+    
+    // Initialize balances for all users
+    for (var user in users) {
+      if (user['id'] != userId) {
+        balances[user['id']] = 0;
+      }
+    }
+    
+    // Calculate from expenses
+    for (var expense in expenses) {
+      if (expense['paidBy'] == userId) {
+        // Current user paid for others
+        for (var split in expense['splitWith']) {
+          if (split['userId'] != userId) {
+            balances[split['userId']] = (balances[split['userId']] ?? 0) + split['amount'];
+          }
+        }
+      } else {
+        // Others paid and current user is involved
+        for (var split in expense['splitWith']) {
+          if (split['userId'] == userId) {
+            balances[expense['paidBy']] = (balances[expense['paidBy']] ?? 0) - split['amount'];
+          }
+        }
+      }
+    }
+    
+    // Adjust with settlements
+    for (var settlement in settlements) {
+      if (settlement['payerId'] == userId) {
+        // User paid someone
+        balances[settlement['payeeId']] = (balances[settlement['payeeId']] ?? 0) - settlement['amount'];
+      } else if (settlement['payeeId'] == userId) {
+        // User received payment
+        balances[settlement['payerId']] = (balances[settlement['payerId']] ?? 0) + settlement['amount'];
+      }
+    }
+    
+    // Prepare result
+    double totalOwed = 0;
+    double totalOwe = 0;
+    List<Map<String, dynamic>> userBalances = [];
+    
+    for (var entry in balances.entries) {
+      if (entry.value > 0) {
+        totalOwed += entry.value;
+        final user = await getUserById(entry.key);
+        userBalances.add({
+          'userId': entry.key,
+          'name': user?['name'] ?? 'Unknown',
+          'amount': entry.value,
+          'type': 'owed'
+        });
+      } else if (entry.value < 0) {
+        totalOwe += entry.value.abs();
+        final user = await getUserById(entry.key);
+        userBalances.add({
+          'userId': entry.key,
+          'name': user?['name'] ?? 'Unknown',
+          'amount': entry.value.abs(),
+          'type': 'owe'
+        });
+      } else {
+        final user = await getUserById(entry.key);
+        userBalances.add({
+          'userId': entry.key,
+          'name': user?['name'] ?? 'Unknown',
+          'amount': 0,
+          'type': 'settled'
+        });
+      }
+    }
+    
+    return {
+      'totalOwed': totalOwed,
+      'totalOwe': totalOwe,
+      'netBalance': totalOwed - totalOwe,
+      'userBalances': userBalances,
+    };
+  }
+
+  // Simplify Debts Algorithm
+  Future<List<Map<String, dynamic>>> simplifyDebts(String groupId) async {
+    final group = await getGroupById(groupId);
+    if (group == null) return [];
+    
+    final members = List<Map<String, dynamic>>.from(group['members']);
+    final expenses = await getExpensesByGroupId(groupId);
+    final settlements = await getSettlements();
+    
+    // Calculate net balance for each member
+    Map<String, double> balances = {};
+    for (var member in members) {
+      balances[member['id']] = 0;
+    }
+    
+    // Process expenses
+    for (var expense in expenses) {
+      final paidBy = expense['paidBy'];
+      balances[paidBy] = (balances[paidBy] ?? 0) + expense['amount'];
+      
+      for (var split in expense['splitWith']) {
+        final userId = split['userId'];
+        balances[userId] = (balances[userId] ?? 0) - split['amount'];
+      }
+    }
+    
+    // Process settlements
+    for (var settlement in settlements) {
+      if (settlement['groupId'] == groupId) {
+        balances[settlement['payerId']] = (balances[settlement['payerId']] ?? 0) - settlement['amount'];
+        balances[settlement['payeeId']] = (balances[settlement['payeeId']] ?? 0) + settlement['amount'];
+      }
+    }
+    
+    // Separate debtors and creditors
+    List<Map<String, dynamic>> debtors = [];
+    List<Map<String, dynamic>> creditors = [];
+    
+    for (var entry in balances.entries) {
+      if (entry.value < 0) {
+        debtors.add({
+          'id': entry.key,
+          'amount': entry.value.abs()
+        });
+      } else if (entry.value > 0) {
+        creditors.add({
+          'id': entry.key,
+          'amount': entry.value
+        });
+      }
+    }
+    
+    // Sort by amount (descending)
+    debtors.sort((a, b) => b['amount'].compareTo(a['amount']));
+    creditors.sort((a, b) => b['amount'].compareTo(a['amount']));
+    
+    // Generate simplified transactions
+    List<Map<String, dynamic>> transactions = [];
+    
+    while (debtors.isNotEmpty && creditors.isNotEmpty) {
+      final debtor = debtors.first;
+      final creditor = creditors.first;
+      
+      final amount = min(
+        (debtor['amount'] as num).toDouble(),
+        (creditor['amount'] as num).toDouble()
+      );
+      
+      if (amount > 0) {
+        final debtorUser = await getUserById(debtor['id']);
+        final creditorUser = await getUserById(creditor['id']);
+        
+        transactions.add({
+          'from': {
+            'id': debtor['id'],
+            'name': debtorUser?['name'] ?? 'Unknown'
+          },
+          'to': {
+            'id': creditor['id'],
+            'name': creditorUser?['name'] ?? 'Unknown'
+          },
+          'amount': amount
+        });
+        
+        debtor['amount'] -= amount;
+        creditor['amount'] -= amount;
+      }
+      
+      if (debtor['amount'] < 0.01) debtors.removeAt(0);
+      if (creditor['amount'] < 0.01) creditors.removeAt(0);
+    }
+    
+    return transactions;
+  }
+}
+
+// Auth Service
+class AuthService {
+  static final AuthService _instance = AuthService._internal();
+  factory AuthService() => _instance;
+  AuthService._internal();
+
+  final DatabaseService _db = DatabaseService();
+  final String _authKey = 'auth_user';
+
+  Future<Map<String, dynamic>?> getCurrentUser() async {
+    try {
+      String? userId;
+      if (kIsWeb) {
+        userId = html.window.localStorage[_authKey];
+      } else {
+        final prefs = await SharedPreferences.getInstance();
+        userId = prefs.getString(_authKey);
+      }
+      if (userId == null) return null;
+      return _db.getUserById(userId);
+    } catch (e) {
+      print('Error getting current user: $e');
+      return null;
+    }
+  }
+
+  Future<void> _setCurrentUser(String? userId) async {
+    try {
+      if (userId == null) return;
+      if (kIsWeb) {
+        html.window.localStorage[_authKey] = userId;
+      } else {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString(_authKey, userId);
+      }
+    } catch (e) {
+      print('Error setting current user: $e');
+    }
+  }
+
+  Future<void> logout() async {
+    try {
+      if (kIsWeb) {
+        html.window.localStorage.remove(_authKey);
+      } else {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.remove(_authKey);
+      }
+    } catch (e) {
+      print('Error during logout: $e');
+    }
+  }
+
+  Future<bool> isLoggedIn() async {
+    final user = await getCurrentUser();
+    return user != null;
+  }
+
+  Future<Map<String, dynamic>?> signUp(String name, String email, String password) async {
+    final existingUser = await _db.getUserByEmail(email);
+    if (existingUser != null) return null;
+
+    final user = {
+      'id': const Uuid().v4(),
+      'name': name,
+      'email': email,
+      'password': password, // In a real app, this should be hashed
+      'profilePicture': null,
+      'createdAt': DateTime.now().toIso8601String(),
+    };
+
+    await _db.addUser(user);
+    await _setCurrentUser(user['id']);
+    return user;
+  }
+
+  Future<Map<String, dynamic>?> login(String email, String password) async {
+    final user = await _db.getUserByEmail(email);
+    if (user == null || user['password'] != password) return null;
+
+    await _setCurrentUser(user['id']);
+    return user;
+  }
+
+  Future<bool> updateProfile(Map<String, dynamic> userData) async {
+    try {
+      final currentUser = await getCurrentUser();
+      if (currentUser == null) return false;
+
+      final updatedUser = {
+        ...currentUser,
+        ...userData,
+      };
+
+      await _db.updateUser(updatedUser);
+      return true;
+    } catch (e) {
+      return false;
+    }
+  }
+}
+
+// Splash Screen
+class SplashScreen extends StatefulWidget {
+  const SplashScreen({super.key});
+
+  @override
+  State<SplashScreen> createState() => _SplashScreenState();
+}
+
+class _SplashScreenState extends State<SplashScreen> {
+  @override
+  void initState() {
+    super.initState();
+    print('Starting initialization...');
+    _initialize();
+  }
+
+  Future<void> _initialize() async {
+    try {
+      print('Initializing database...');
+      await DatabaseService().initializeDatabase();
+      print('Database initialized');
+      
+      print('Checking login status...');
+      final isLoggedIn = await AuthService().isLoggedIn();
+      print('Login status checked: $isLoggedIn');
+
+      if (mounted) {
+        print('Navigating to next screen...');
+        if (isLoggedIn) {
+          Navigator.of(context).pushReplacement(
+            MaterialPageRoute(builder: (_) => const HomePage()),
+          );
+        } else {
+          Navigator.of(context).pushReplacement(
+            MaterialPageRoute(builder: (_) => const WelcomePage()),
+          );
+        }
+        print('Navigation completed');
+      }
+    } catch (e) {
+      print('Error during initialization: $e');
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    print('Building splash screen');
+    return Scaffold(
+      body: Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Image.asset('assets/logo.png', width: 120, height: 120),
+            const SizedBox(height: 24),
+            const Text(
+              'Splitwise',
+              style: TextStyle(
+                fontSize: 32,
+                fontWeight: FontWeight.bold,
+                color: Color(0xFF333333),
+              ),
+            ),
+            const SizedBox(height: 24),
+            const CircularProgressIndicator(
+              color: Color(0xFF1CC29F),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// Welcome Page
+class WelcomePage extends StatelessWidget {
+  const WelcomePage({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: SafeArea(
+        child: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(24.0),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Spacer(),
+                // Logo
+                SizedBox(
+                  width: 120,
+                  height: 120,
+                  child: Stack(
+                    children: [
+                      Container(
+                        width: 120,
+                        height: 120,
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                      ),
+                      ClipPath(
+                        clipper: DiagonalClipper(part: 1),
+                        child: Container(
+                          width: 120,
+                          height: 120,
+                          color: const Color(0xFF1CC29F),
+                        ),
+                      ),
+                      ClipPath(
+                        clipper: DiagonalClipper(part: 2),
+                        child: Container(
+                          width: 120,
+                          height: 120,
+                          color: const Color(0xFF333333),
+                        ),
+                      ),
+                      Positioned(
+                        left: 30,
+                        top: 40,
+                        child: Text(
+                          'S',
+                          style: TextStyle(
+                            fontSize: 60,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.white.withOpacity(0.9),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 24),
+                const Text(
+                  'Splitwise',
+                  style: TextStyle(
+                    fontSize: 32,
+                    fontWeight: FontWeight.bold,
+                    color: Color(0xFF333333),
+                  ),
+                ),
+                const Spacer(),
+                // Sign up button
+                ElevatedButton(
+                  onPressed: () {
+                    Navigator.of(context).push(
+                      MaterialPageRoute(builder: (_) => const SignUpPage()),
+                    );
+                  },
+                  child: const Text('Sign up'),
+                ),
+                const SizedBox(height: 16),
+                // Log in button
+                ElevatedButton(
+                  onPressed: () {
+                    Navigator.of(context).push(
+                      MaterialPageRoute(builder: (_) => const LoginPage()),
+                    );
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF333333),
+                  ),
+                  child: const Text('Log in'),
+                ),
+                const SizedBox(height: 24),
+                // Terms and privacy
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    TextButton(
+                      onPressed: () {},
+                      child: const Text('Terms'),
+                    ),
+                    const Text('|'),
+                    TextButton(
+                      onPressed: () {},
+                      child: const Text('Privacy Policy'),
+                    ),
+                    const Text('|'),
+                    TextButton(
+                      onPressed: () {},
+                      child: const Text('Contact us'),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class DiagonalClipper extends CustomClipper<Path> {
+  final int part;
+
+  DiagonalClipper({required this.part});
+
+  @override
+  Path getClip(Size size) {
+    final path = Path();
+    if (part == 1) {
+      path.moveTo(0, 0);
+      path.lineTo(size.width, 0);
+      path.lineTo(0, size.height);
+      path.close();
+    } else if (part == 2) {
+      path.moveTo(size.width, 0);
+      path.lineTo(size.width, size.height);
+      path.lineTo(0, size.height);
+      path.close();
+    }
+    return path;
+  }
+
+  @override
+  bool shouldReclip(CustomClipper<Path> oldClipper) => false;
+}
+
+// Sign Up Page
+class SignUpPage extends StatefulWidget {
+  const SignUpPage({super.key});
+
+  @override
+  State<SignUpPage> createState() => _SignUpPageState();
+}
+
+class _SignUpPageState extends State<SignUpPage> {
+  final _formKey = GlobalKey<FormState>();
+  final _nameController = TextEditingController();
+  final _emailController = TextEditingController();
+  final _passwordController = TextEditingController();
+  bool _isLoading = false;
+
+  Future<void> _signUp() async {
+    if (!_formKey.currentState!.validate()) return;
+
+    setState(() {
+      _isLoading = true;
+    });
+
+    try {
+      final user = await AuthService().signUp(
+        _nameController.text.trim(),
+        _emailController.text.trim(),
+        _passwordController.text,
+      );
+
+      if (mounted) {
+        if (user != null) {
+          Navigator.of(context).pushAndRemoveUntil(
+            MaterialPageRoute(builder: (_) => const HomePage()),
+            (route) => false,
+          );
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Email already in use')),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Failed to sign up')),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    _nameController.dispose();
+    _emailController.dispose();
+    _passwordController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Sign Up'),
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back),
+          onPressed: () => Navigator.of(context).pop(),
+        ),
+      ),
+      body: SafeArea(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(24.0),
+          child: Form(
+            key: _formKey,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Create your account',
+                  style: TextStyle(
+                    fontSize: 24,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 24),
+                TextFormField(
+                  controller: _nameController,
+                  decoration: const InputDecoration(
+                    labelText: 'Full Name',
+                    prefixIcon: Icon(Icons.person),
+                  ),
+                  validator: (value) {
+                    if (value == null || value.isEmpty) {
+                      return 'Please enter your name';
+                    }
+                    return null;
+                  },
+                ),
+                const SizedBox(height: 16),
+                TextFormField(
+                  controller: _emailController,
+                  decoration: const InputDecoration(
+                    labelText: 'Email address',
+                    prefixIcon: Icon(Icons.email),
+                  ),
+                  keyboardType: TextInputType.emailAddress,
+                  validator: (value) {
+                    if (value == null || value.isEmpty) {
+                      return 'Please enter your email';
+                    }
+                    if (!RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$').hasMatch(value)) {
+                      return 'Please enter a valid email';
+                    }
+                    return null;
+                  },
+                ),
+                const SizedBox(height: 16),
+                TextFormField(
+                  controller: _passwordController,
+                  decoration: const InputDecoration(
+                    labelText: 'Password',
+                    prefixIcon: Icon(Icons.lock),
+                    suffixIcon: Icon(Icons.visibility),
+                  ),
+                  obscureText: true,
+                  validator: (value) {
+                    if (value == null || value.isEmpty) {
+                      return 'Please enter a password';
+                    }
+                    if (value.length < 6) {
+                      return 'Password must be at least 6 characters';
+                    }
+                    return null;
+                  },
+                ),
+                const SizedBox(height: 24),
+                ElevatedButton(
+                  onPressed: _isLoading ? null : _signUp,
+                  child: _isLoading
+                      ? const SizedBox(
+                          height: 20,
+                          width: 20,
+                          child: CircularProgressIndicator(
+                            color: Colors.white,
+                            strokeWidth: 2,
+                          ),
+                        )
+                      : const Text('Sign up'),
+                ),
+                const SizedBox(height: 16),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Text('Already have an account?'),
+                    TextButton(
+                      onPressed: () {
+                        Navigator.of(context).pushReplacement(
+                          MaterialPageRoute(builder: (_) => const LoginPage()),
+                        );
+                      },
+                      child: const Text('Log in'),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// Login Page
+class LoginPage extends StatefulWidget {
+  const LoginPage({super.key});
+
+  @override
+  State<LoginPage> createState() => _LoginPageState();
+}
+
+class _LoginPageState extends State<LoginPage> {
+  final _formKey = GlobalKey<FormState>();
+  final _emailController = TextEditingController();
+  final _passwordController = TextEditingController();
+  bool _isLoading = false;
+  bool _obscurePassword = true;
+
+  Future<void> _login() async {
+    if (!_formKey.currentState!.validate()) return;
+
+    setState(() {
+      _isLoading = true;
+    });
+
+    try {
+      final user = await AuthService().login(
+        _emailController.text.trim(),
+        _passwordController.text,
+      );
+
+      if (mounted) {
+        if (user != null) {
+          Navigator.of(context).pushAndRemoveUntil(
+            MaterialPageRoute(builder: (_) => const HomePage()),
+            (route) => false,
+          );
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Invalid email or password')),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Failed to log in')),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    _emailController.dispose();
+    _passwordController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Log in'),
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back),
+          onPressed: () => Navigator.of(context).pop(),
+        ),
+      ),
+      body: SafeArea(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(24.0),
+          child: Form(
+            key: _formKey,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Log in',
+                  style: TextStyle(
+                    fontSize: 32,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 32),
+                TextFormField(
+                  controller: _emailController,
+                  decoration: const InputDecoration(
+                    labelText: 'Email address',
+                  ),
+                  keyboardType: TextInputType.emailAddress,
+                  validator: (value) {
+                    if (value == null || value.isEmpty) {
+                      return 'Please enter your email';
+                    }
+                    return null;
+                  },
+                ),
+                const SizedBox(height: 24),
+                TextFormField(
+                  controller: _passwordController,
+                  decoration: InputDecoration(
+                    labelText: 'Password',
+                    suffixIcon: IconButton(
+                      icon: Icon(
+                        _obscurePassword ? Icons.visibility : Icons.visibility_off,
+                      ),
+                      onPressed: () {
+                        setState(() {
+                          _obscurePassword = !_obscurePassword;
+                        });
+                      },
+                    ),
+                  ),
+                  obscureText: _obscurePassword,
+                  validator: (value) {
+                    if (value == null || value.isEmpty) {
+                      return 'Please enter your password';
+                    }
+                    return null;
+                  },
+                ),
+                const SizedBox(height: 32),
+                ElevatedButton(
+                  onPressed: _isLoading ? null : _login,
+                  child: _isLoading
+                      ? const SizedBox(
+                          height: 20,
+                          width: 20,
+                          child: CircularProgressIndicator(
+                            color: Colors.white,
+                            strokeWidth: 2,
+                          ),
+                        )
+                      : const Text('Log in'),
+                ),
+                const SizedBox(height: 16),
+                Center(
+                  child: TextButton(
+                    onPressed: () {
+                      // Forgot password functionality
+                    },
+                    child: const Text('Forgot your password?'),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// Home Page with Bottom Navigation
+class HomePage extends StatefulWidget {
+  const HomePage({super.key});
+
+  @override
+  State<HomePage> createState() => _HomePageState();
+}
+
+class _HomePageState extends State<HomePage> {
+  int _currentIndex = 0;
+  late Future<Map<String, dynamic>?> _userFuture;
+  late Future<Map<String, dynamic>> _balancesFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadUserData();
+  }
+
+  Future<void> _loadUserData() async {
+    _userFuture = AuthService().getCurrentUser();
+    final user = await _userFuture;
+    if (user != null) {
+      _balancesFuture = DatabaseService().calculateBalances(user['id']);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<Map<String, dynamic>?>(
+      future: _userFuture,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Scaffold(
+            body: Center(child: CircularProgressIndicator()),
+          );
+        }
+
+        if (snapshot.hasError || snapshot.data == null) {
+          return Scaffold(
+            body: Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Text('Failed to load user data'),
+                  ElevatedButton(
+                    onPressed: () {
+                      Navigator.of(context).pushAndRemoveUntil(
+                        MaterialPageRoute(builder: (_) => const WelcomePage()),
+                        (route) => false,
+                      );
+                    },
+                    child: const Text('Go to Login'),
+                  ),
+                ],
+              ),
+            ),
+          );
+        }
+
+        final user = snapshot.data!;
+        final List<Widget> _pages = [
+          FriendsTab(userId: user['id']),
+          GroupsTab(userId: user['id']),
+          AddExpenseTab(userId: user['id']),
+          ActivityTab(userId: user['id']),
+          AccountTab(user: user),
+        ];
+
+        return Scaffold(
+          body: _pages[_currentIndex],
+          bottomNavigationBar: BottomNavigationBar(
+            currentIndex: _currentIndex,
+            onTap: (index) {
+              setState(() {
+                _currentIndex = index;
+              });
+            },
+            type: BottomNavigationBarType.fixed,
+            selectedItemColor: Theme.of(context).primaryColor,
+            unselectedItemColor: Colors.grey,
+            items: const [
+              BottomNavigationBarItem(
+                icon: Icon(Icons.person),
+                label: 'Friends',
+              ),
+              BottomNavigationBarItem(
+                icon: Icon(Icons.group),
+                label: 'Groups',
+              ),
+              BottomNavigationBarItem(
+                icon: Icon(Icons.add_circle, size: 40),
+                label: '',
+              ),
+              BottomNavigationBarItem(
+                icon: Icon(Icons.bar_chart),
+                label: 'Activity',
+              ),
+              BottomNavigationBarItem(
+                icon: Icon(Icons.account_circle),
+                label: 'Account',
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
+// Friends Tab
+class FriendsTab extends StatefulWidget {
+  final String userId;
+
+  const FriendsTab({super.key, required this.userId});
+
+  @override
+  State<FriendsTab> createState() => _FriendsTabState();
+}
+
+class _FriendsTabState extends State<FriendsTab> {
+  late Future<Map<String, dynamic>> _balancesFuture;
+  late Future<List<Map<String, dynamic>>> _usersFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadData();
+  }
+
+  Future<void> _loadData() async {
+    _balancesFuture = DatabaseService().calculateBalances(widget.userId);
+    _usersFuture = DatabaseService().getUsers();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: Row(
+          children: [
+            IconButton(
+              icon: const Icon(Icons.search),
+              onPressed: () {
+                // Search functionality
+              },
+            ),
+            const Spacer(),
+            TextButton(
+              onPressed: () {
+                // Add friends functionality
+              },
+              child: const Text(
+                'Add friends',
+                style: TextStyle(
+                  color: Color(0xFF1CC29F),
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+      body: RefreshIndicator(
+        onRefresh: () async {
+          setState(() {
+            _loadData();
+          });
+        },
+        child: FutureBuilder<Map<String, dynamic>>(
+          future: _balancesFuture,
+          builder: (context, snapshot) {
+            if (snapshot.connectionState == ConnectionState.waiting) {
+              return const Center(child: CircularProgressIndicator());
+            }
+
+            if (snapshot.hasError) {
+              return Center(child: Text('Error: ${snapshot.error}'));
+            }
+
+            final balances = snapshot.data!;
+            final netBalance = balances['netBalance'] as double;
+            final userBalances = List<Map<String, dynamic>>.from(balances['userBalances']);
+
+            return ListView(
+              padding: const EdgeInsets.all(16),
+              children: [
+                // Overall balance
+                Container(
+                  padding: const EdgeInsets.symmetric(vertical: 8),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        'Overall, you are ${netBalance >= 0 ? 'owed' : 'owe'}',
+                        style: const TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      Row(
+                        children: [
+                          Text(
+                            'PKR ${netBalance.abs().toStringAsFixed(2)}',
+                            style: TextStyle(
+                              fontSize: 20,
+                              fontWeight: FontWeight.bold,
+                              color: netBalance >= 0 ? const Color(0xFF1CC29F) : Colors.orange,
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          const Icon(Icons.tune),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+                const Divider(),
+                // User balances
+                ...userBalances.map((balance) {
+                  final isOwed = balance['type'] == 'owed';
+                  final isSettled = balance['type'] == 'settled';
+                  
+                  return ListTile(
+                    leading: CircleAvatar(
+                      backgroundColor: isOwed 
+                          ? Colors.red.shade700 
+                          : isSettled 
+                              ? Colors.blue.shade700 
+                              : Colors.green.shade700,
+                      child: Text(
+                        balance['name'].substring(0, 1).toUpperCase(),
+                        style: const TextStyle(color: Colors.white),
+                      ),
+                    ),
+                    title: Text(
+                      balance['name'],
+                      style: const TextStyle(
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    trailing: isSettled 
+                        ? const Text('settled up')
+                        : Text(
+                            isOwed 
+                                ? 'owes you PKR ${balance['amount'].toStringAsFixed(2)}'
+                                : 'you owe PKR ${balance['amount'].toStringAsFixed(2)}',
+                            style: TextStyle(
+                              color: isOwed ? const Color(0xFF1CC29F) : Colors.orange,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                    onTap: () {
+                      // Navigate to friend details
+                    },
+                  );
+                }).toList(),
+              ],
+            );
+          },
+        ),
+      ),
+    );
+  }
+}
+
+// Groups Tab
+class GroupsTab extends StatefulWidget {
+  final String userId;
+
+  const GroupsTab({super.key, required this.userId});
+
+  @override
+  State<GroupsTab> createState() => _GroupsTabState();
+}
+
+class _GroupsTabState extends State<GroupsTab> {
+  late Future<List<Map<String, dynamic>>> _groupsFuture;
+  late Future<Map<String, dynamic>> _balancesFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadData();
+  }
+
+  Future<void> _loadData() async {
+    _groupsFuture = DatabaseService().getGroupsByUserId(widget.userId);
+    _balancesFuture = DatabaseService().calculateBalances(widget.userId);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: Row(
+          children: [
+            IconButton(
+              icon: const Icon(Icons.search),
+              onPressed: () {
+                // Search functionality
+              },
+            ),
+            const Spacer(),
+            TextButton(
+              onPressed: () {
+                _showCreateGroupDialog();
+              },
+              child: const Text(
+                'Create group',
+                style: TextStyle(
+                  color: Color(0xFF1CC29F),
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+      body: RefreshIndicator(
+        onRefresh: () async {
+          setState(() {
+            _loadData();
+          });
+        },
+        child: FutureBuilder<Map<String, dynamic>>(
+          future: _balancesFuture,
+          builder: (context, balanceSnapshot) {
+            if (balanceSnapshot.connectionState == ConnectionState.waiting) {
+              return const Center(child: CircularProgressIndicator());
+            }
+
+            if (balanceSnapshot.hasError) {
+              return Center(child: Text('Error: ${balanceSnapshot.error}'));
+            }
+
+            final balances = balanceSnapshot.data!;
+            final netBalance = balances['netBalance'] as double;
+
+            return FutureBuilder<List<Map<String, dynamic>>>(
+              future: _groupsFuture,
+              builder: (context, groupsSnapshot) {
+                if (groupsSnapshot.connectionState == ConnectionState.waiting) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+
+                if (groupsSnapshot.hasError) {
+                  return Center(child: Text('Error: ${groupsSnapshot.error}'));
+                }
+
+                final groups = groupsSnapshot.data!;
+                final settledGroups = groups.where((g) => g['isSettled'] == true).toList();
+                final activeGroups = groups.where((g) => g['isSettled'] != true).toList();
+
+                return ListView(
+                  padding: const EdgeInsets.all(16),
+                  children: [
+                    // Overall balance
+                    Container(
+                      padding: const EdgeInsets.symmetric(vertical: 8),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            'Overall, you are ${netBalance >= 0 ? 'owed' : 'owe'}',
+                            style: const TextStyle(
+                              fontSize: 20,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          Row(
+                            children: [
+                              Text(
+                                'PKR ${netBalance.abs().toStringAsFixed(2)}',
+                                style: TextStyle(
+                                  fontSize: 20,
+                                  fontWeight: FontWeight.bold,
+                                  color: netBalance >= 0 ? const Color(0xFF1CC29F) : Colors.orange,
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              const Icon(Icons.tune),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                    const Divider(),
+                    // Active groups
+                    ...activeGroups.map((group) {
+                      final groupBalance = _calculateGroupBalance(group, widget.userId);
+                      final isOwed = groupBalance > 0;
+                      
+                      return ListTile(
+                        leading: group['icon'] != null
+                            ? Image.asset(group['icon'], width: 40, height: 40)
+                            : Container(
+                                width: 40,
+                                height: 40,
+                                decoration: BoxDecoration(
+                                  color: Colors.primaries[
+                                    group['name'].hashCode % Colors.primaries.length
+                                  ],
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: Center(
+                                  child: Text(
+                                    group['name'].substring(0, 1).toUpperCase(),
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 18,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                        title: Text(
+                          group['name'],
+                          style: const TextStyle(
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        trailing: groupBalance == 0
+                            ? const Text('settled up')
+                            : Text(
+                                isOwed 
+                                    ? 'you are owed\nPKR ${groupBalance.abs().toStringAsFixed(2)}'
+                                    : 'you owe\nPKR ${groupBalance.abs().toStringAsFixed(2)}',
+                                textAlign: TextAlign.right,
+                                style: TextStyle(
+                                  color: isOwed ? const Color(0xFF1CC29F) : Colors.orange,
+                                ),
+                              ),
+                        onTap: () {
+                          Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder: (_) => GroupDetailPage(
+                                groupId: group['id'],
+                                userId: widget.userId,
+                              ),
+                            ),
+                          );
+                        },
+                      );
+                    }).toList(),
+                    
+                    if (settledGroups.isNotEmpty) ...[
+                      const SizedBox(height: 16),
+                      Text(
+                        'Hiding groups you settled up with over 7 days ago',
+                        style: TextStyle(
+                          color: Colors.grey[600],
+                          fontSize: 14,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      OutlinedButton(
+                        onPressed: () {
+                          // Show settled groups
+                        },
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: const Color(0xFF1CC29F),
+                          side: const BorderSide(color: Color(0xFF1CC29F)),
+                        ),
+                        child: Text('Show ${settledGroups.length} settled-up groups'),
+                      ),
+                    ],
+                  ],
+                );
+              },
+            );
+          },
+        ),
+      ),
+    );
+  }
+
+  double _calculateGroupBalance(Map<String, dynamic> group, String userId) {
+    // This is a simplified calculation
+    // In a real app, you would calculate this from expenses
+    final members = List<Map<String, dynamic>>.from(group['members']);
+    final userMember = members.firstWhere((m) => m['id'] == userId, orElse: () => {'balance': 0.0});
+    return userMember['balance'] ?? 0.0;
+  }
+
+  void _showCreateGroupDialog() {
+    final nameController = TextEditingController();
+    
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Create a new group'),
+        content: TextField(
+          controller: nameController,
+          decoration: const InputDecoration(
+            labelText: 'Group name',
+            hintText: 'e.g., Trip to Murree',
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              final name = nameController.text.trim();
+              if (name.isEmpty) return;
+              
+              final newGroup = {
+                'id': const Uuid().v4(),
+                'name': name,
+                'icon': null,
+                'createdAt': DateTime.now().toIso8601String(),
+                'createdBy': widget.userId,
+                'members': [
+                  {
+                    'id': widget.userId,
+                    'balance': 0.0,
+                    'role': 'admin',
+                  }
+                ],
+                'isSettled': false,
+              };
+              
+              await DatabaseService().addGroup(newGroup);
+              
+              if (mounted) {
+                Navigator.of(context).pop();
+                setState(() {
+                  _loadData();
+                });
+              }
+            },
+            child: const Text('Create'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// Group Detail Page
+class GroupDetailPage extends StatefulWidget {
+  final String groupId;
+  final String userId;
+
+  const GroupDetailPage({
+    super.key,
+    required this.groupId,
+    required this.userId,
+  });
+
+  @override
+  State<GroupDetailPage> createState() => _GroupDetailPageState();
+}
+
+class _GroupDetailPageState extends State<GroupDetailPage> {
+  late Future<Map<String, dynamic>?> _groupFuture;
+  late Future<List<Map<String, dynamic>>> _expensesFuture;
+  late Future<List<Map<String, dynamic>>> _simplifiedDebtsFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadData();
+  }
+
+  Future<void> _loadData() async {
+    _groupFuture = DatabaseService().getGroupById(widget.groupId);
+    _expensesFuture = DatabaseService().getExpensesByGroupId(widget.groupId);
+    _simplifiedDebtsFuture = DatabaseService().simplifyDebts(widget.groupId);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: FutureBuilder<Map<String, dynamic>?>(
+          future: _groupFuture,
+          builder: (context, snapshot) {
+            if (snapshot.connectionState == ConnectionState.waiting) {
+              return const Text('Loading...');
+            }
+            if (snapshot.hasError || snapshot.data == null) {
+              return const Text('Group');
+            }
+            return Text(snapshot.data!['name']);
+          },
+        ),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.settings),
+            onPressed: () {
+              // Group settings
+            },
+          ),
+        ],
+      ),
+      body: FutureBuilder<Map<String, dynamic>?>(
+        future: _groupFuture,
+        builder: (context, groupSnapshot) {
+          if (groupSnapshot.connectionState == ConnectionState.waiting) {
+            return const Center(child: CircularProgressIndicator());
+          }
+
+          if (groupSnapshot.hasError || groupSnapshot.data == null) {
+            return Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Text('Failed to load group data'),
+                  ElevatedButton(
+                    onPressed: () => Navigator.of(context).pop(),
+                    child: const Text('Go Back'),
+                  ),
+                ],
+              ),
+            );
+          }
+
+          final group = groupSnapshot.data!;
+          final members = List<Map<String, dynamic>>.from(group['members']);
+          
+          return FutureBuilder<List<Map<String, dynamic>>>(
+            future: _expensesFuture,
+            builder: (context, expensesSnapshot) {
+              if (expensesSnapshot.connectionState == ConnectionState.waiting) {
+                return const Center(child: CircularProgressIndicator());
+              }
+
+              final expenses = expensesSnapshot.data ?? [];
+              
+              return FutureBuilder<List<Map<String, dynamic>>>(
+                future: _simplifiedDebtsFuture,
+                builder: (context, debtsSnapshot) {
+                  final simplifiedDebts = debtsSnapshot.data ?? [];
+                  
+                  return DefaultTabController(
+                    length: 2,
+                    child: Column(
+                      children: [
+                        const TabBar(
+                          tabs: [
+                            Tab(text: 'EXPENSES'),
+                            Tab(text: 'BALANCES'),
+                          ],
+                          labelColor: Color(0xFF1CC29F),
+                          unselectedLabelColor: Colors.grey,
+                          indicatorColor: Color(0xFF1CC29F),
+                        ),
+                        Expanded(
+                          child: TabBarView(
+                            children: [
+                              // Expenses tab
+                              expenses.isEmpty
+                                  ? Center(
+                                      child: Column(
+                                        mainAxisAlignment: MainAxisAlignment.center,
+                                        children: [
+                                          const Icon(
+                                            Icons.receipt_long,
+                                            size: 64,
+                                            color: Colors.grey,
+                                          ),
+                                          const SizedBox(height: 16),
+                                          const Text(
+                                            'No expenses yet',
+                                            style: TextStyle(
+                                              fontSize: 18,
+                                              fontWeight: FontWeight.bold,
+                                            ),
+                                          ),
+                                          const SizedBox(height: 8),
+                                          const Text(
+                                            'Add your first expense to get started',
+                                            style: TextStyle(color: Colors.grey),
+                                          ),
+                                          const SizedBox(height: 16),
+                                          ElevatedButton.icon(
+                                            onPressed: () {
+                                              Navigator.of(context).push(
+                                                MaterialPageRoute(
+                                                  builder: (_) => AddExpensePage(
+                                                    groupId: widget.groupId,
+                                                    userId: widget.userId,
+                                                  ),
+                                                ),
+                                              ).then((_) => setState(() => _loadData()));
+                                            },
+                                            icon: const Icon(Icons.add),
+                                            label: const Text('Add an expense'),
+                                          ),
+                                        ],
+                                      ),
+                                    )
+                                  : ListView.builder(
+                                      itemCount: expenses.length,
+                                      itemBuilder: (context, index) {
+                                        final expense = expenses[index];
+                                        return ExpenseListItem(
+                                          expense: expense,
+                                          userId: widget.userId,
+                                        );
+                                      },
+                                    ),
+                              
+                              // Balances tab
+                              ListView(
+                                padding: const EdgeInsets.all(16),
+                                children: [
+                                  // Simplified debts
+                                  if (simplifiedDebts.isNotEmpty) ...[
+                                    const Text(
+                                      'SIMPLIFIED BALANCES',
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        color: Colors.grey,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 8),
+                                    ...simplifiedDebts.map((debt) {
+                                      final isUserInvolved = debt['from']['id'] == widget.userId || 
+                                                            debt['to']['id'] == widget.userId;
+                                      
+                                      return ListTile(
+                                        title: Row(
+                                          children: [
+                                            Text(
+                                              debt['from']['name'],
+                                              style: TextStyle(
+                                                fontWeight: isUserInvolved ? FontWeight.bold : FontWeight.normal,
+                                              ),
+                                            ),
+                                            const Icon(Icons.arrow_right_alt),
+                                            Text(
+                                              debt['to']['name'],
+                                              style: TextStyle(
+                                                fontWeight: isUserInvolved ? FontWeight.bold : FontWeight.normal,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                        trailing: Text(
+                                          'PKR ${debt['amount'].toStringAsFixed(2)}',
+                                          style: TextStyle(
+                                            fontWeight: isUserInvolved ? FontWeight.bold : FontWeight.normal,
+                                            color: isUserInvolved ? Colors.black : Colors.grey,
+                                          ),
+                                        ),
+                                      );
+                                    }).toList(),
+                                  ],
+                                  
+                                  const SizedBox(height: 16),
+                                  
+                                  // Individual balances
+                                  const Text(
+                                    'INDIVIDUAL BALANCES',
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      color: Colors.grey,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 8),
+                                  ...members.map((member) {
+                                    final balance = member['balance'] ?? 0.0;
+                                    final isCurrentUser = member['id'] == widget.userId;
+                                    
+                                    if (isCurrentUser) return const SizedBox.shrink();
+                                    
+                                    return FutureBuilder<Map<String, dynamic>?>(
+                                      future: DatabaseService().getUserById(member['id']),
+                                      builder: (context, userSnapshot) {
+                                        final userName = userSnapshot.data?['name'] ?? 'Unknown';
+                                        
+                                        return ListTile(
+                                          leading: CircleAvatar(
+                                            backgroundColor: Colors.primaries[
+                                              userName.hashCode % Colors.primaries.length
+                                            ],
+                                            child: Text(
+                                              userName.substring(0, 1).toUpperCase(),
+                                              style: const TextStyle(color: Colors.white),
+                                            ),
+                                          ),
+                                          title: Text(userName),
+                                          trailing: Text(
+                                            balance == 0
+                                                ? 'settled up'
+                                                : balance > 0
+                                                    ? 'owes you PKR ${balance.abs().toStringAsFixed(2)}'
+                                                    : 'you owe PKR ${balance.abs().toStringAsFixed(2)}',
+                                            style: TextStyle(
+                                              color: balance == 0
+                                                  ? Colors.grey
+                                                  : balance > 0
+                                                      ? const Color(0xFF1CC29F)
+                                                      : Colors.orange,
+                                            ),
+                                          ),
+                                        );
+                                      },
+                                    );
+                                  }).toList(),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                },
+              );
+            },
+          );
+        },
+      ),
+      floatingActionButton: FloatingActionButton(
+        onPressed: () {
+          Navigator.of(context).push(
+            MaterialPageRoute(
+              builder: (_) => AddExpensePage(
+                groupId: widget.groupId,
+                userId: widget.userId,
+              ),
+            ),
+          ).then((_) => setState(() => _loadData()));
+        },
+        backgroundColor: const Color(0xFF1CC29F),
+        child: const Icon(Icons.add, color: Colors.white),
+      ),
+    );
+  }
+}
+
+// Expense List Item
+class ExpenseListItem extends StatelessWidget {
+  final Map<String, dynamic> expense;
+  final String userId;
+
+  const ExpenseListItem({
+    super.key,
+    required this.expense,
+    required this.userId,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final isUserPayer = expense['paidBy'] == userId;
+    final date = DateTime.parse(expense['date']);
+    final formattedDate = DateFormat('MMM d, yyyy').format(date);
+    
+    return FutureBuilder<Map<String, dynamic>?>(
+      future: DatabaseService().getUserById(expense['paidBy']),
+      builder: (context, snapshot) {
+        final payerName = snapshot.data?['name'] ?? 'Unknown';
+        
+        return ListTile(
+          leading: Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              color: Colors.grey.shade200,
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Icon(
+              _getCategoryIcon(expense['category']),
+              color: _getCategoryColor(expense['category']),
+            ),
+          ),
+          title: Text(
+            expense['description'],
+            style: const TextStyle(fontWeight: FontWeight.bold),
+          ),
+          subtitle: Text(
+            '$formattedDate • ${isUserPayer ? 'You paid' : '$payerName paid'} PKR ${expense['amount'].toStringAsFixed(2)}',
+          ),
+          trailing: _buildTrailingWidget(),
+          onTap: () {
+            // Show expense details
+          },
+        );
+      },
+    );
+  }
+
+  Widget _buildTrailingWidget() {
+    final splitWith = List<Map<String, dynamic>>.from(expense['splitWith']);
+    final userSplit = splitWith.firstWhere(
+      (split) => split['userId'] == userId,
+      orElse: () => {'amount': 0.0},
+    );
+    
+    final isUserPayer = expense['paidBy'] == userId;
+    final userAmount = userSplit['amount'] ?? 0.0;
+    
+    if (isUserPayer) {
+      final totalLent = expense['amount'] - userAmount;
+      if (totalLent <= 0) return const Text('you paid');
+      
+      return Text(
+        'you lent\nPKR ${totalLent.toStringAsFixed(2)}',
+        textAlign: TextAlign.right,
+        style: const TextStyle(
+          color: Color(0xFF1CC29F),
+        ),
+      );
+    } else {
+      return Text(
+        'you borrowed\nPKR ${userAmount.toStringAsFixed(2)}',
+        textAlign: TextAlign.right,
+        style: const TextStyle(
+          color: Colors.orange,
+        ),
+      );
+    }
+  }
+
+  IconData _getCategoryIcon(String? category) {
+    switch (category) {
+      case 'food': return Icons.restaurant;
+      case 'transport': return Icons.directions_car;
+      case 'accommodation': return Icons.hotel;
+      case 'entertainment': return Icons.movie;
+      case 'shopping': return Icons.shopping_bag;
+      case 'utilities': return Icons.lightbulb;
+      case 'other': return Icons.category;
+      default: return Icons.receipt;
+    }
+  }
+
+  Color _getCategoryColor(String? category) {
+    switch (category) {
+      case 'food': return Colors.orange;
+      case 'transport': return Colors.blue;
+      case 'accommodation': return Colors.purple;
+      case 'entertainment': return Colors.pink;
+      case 'shopping': return Colors.teal;
+      case 'utilities': return Colors.amber;
+      case 'other': return Colors.grey;
+      default: return Colors.grey;
+    }
+  }
+}
+
+// Add Expense Tab
+class AddExpenseTab extends StatelessWidget {
+  final String userId;
+
+  const AddExpenseTab({super.key, required this.userId});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Add expenses'),
+      ),
+      body: FutureBuilder<List<Map<String, dynamic>>>(
+        future: DatabaseService().getGroupsByUserId(userId),
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Center(child: CircularProgressIndicator());
+          }
+
+          final groups = snapshot.data ?? [];
+          
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Padding(
+                padding: const EdgeInsets.all(16.0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Add expenses',
+                      style: TextStyle(
+                        fontSize: 32,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    const Text(
+                      'You can split expenses with groups or with individuals.',
+                      style: TextStyle(
+                        fontSize: 18,
+                        color: Colors.grey,
+                      ),
+                    ),
+                    const SizedBox(height: 24),
+                    Container(
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(12),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.grey.withOpacity(0.1),
+                            spreadRadius: 1,
+                            blurRadius: 5,
+                            offset: const Offset(0, 2),
+                          ),
+                        ],
+                      ),
+                      child: Padding(
+                        padding: const EdgeInsets.all(16.0),
+                        child: Column(
+                          children: [
+                            Row(
+                              children: [
+                                Container(
+                                  width: 40,
+                                  height: 40,
+                                  decoration: BoxDecoration(
+                                    color: Colors.green.shade100,
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  child: const Icon(
+                                    Icons.shopping_cart,
+                                    color: Colors.green,
+                                  ),
+                                ),
+                                const SizedBox(width: 16),
+                                const Expanded(
+                                  child: TextField(
+                                    decoration: InputDecoration(
+                                      hintText: 'Groceries',
+                                      border: InputBorder.none,
+                                    ),
+                                    style: TextStyle(
+                                      fontSize: 18,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const Divider(),
+                            Row(
+                              children: [
+                                Container(
+                                  width: 40,
+                                  height: 40,
+                                  alignment: Alignment.center,
+                                  child: const Text(
+                                    '\$',
+                                    style: TextStyle(
+                                      fontSize: 24,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 16),
+                                const Expanded(
+                                  child: TextField(
+                                    decoration: InputDecoration(
+                                      hintText: '94.50',
+                                      border: InputBorder.none,
+                                    ),
+                                    keyboardType: TextInputType.number,
+                                    style: TextStyle(
+                                      fontSize: 24,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const Spacer(),
+              Container(
+                width: double.infinity,
+                height: 300,
+                decoration: const BoxDecoration(
+                  image: DecorationImage(
+                    image: AssetImage('assets/expense_illustration.png'),
+                    fit: BoxFit.cover,
+                  ),
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.all(16),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Container(
+                      width: 8,
+                      height: 8,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: Colors.grey.shade300,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Container(
+                      width: 8,
+                      height: 8,
+                      decoration: const BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: Color(0xFF1CC29F),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Container(
+                      width: 8,
+                      height: 8,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: Colors.grey.shade300,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.all(16.0),
+                child: ElevatedButton(
+                  onPressed: () {
+                    if (groups.isEmpty) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('Create a group first to add expenses'),
+                        ),
+                      );
+                      return;
+                    }
+                    
+                    Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) => AddExpensePage(
+                          groupId: groups.first['id'],
+                          userId: userId,
+                        ),
+                      ),
+                    );
+                  },
+                  child: const Text('Skip tour'),
+                ),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+}
+
+// Add Expense Page
+class AddExpensePage extends StatefulWidget {
+  final String groupId;
+  final String userId;
+
+  const AddExpensePage({
+    super.key,
+    required this.groupId,
+    required this.userId,
+  });
+
+  @override
+  State<AddExpensePage> createState() => _AddExpensePageState();
+}
+
+class _AddExpensePageState extends State<AddExpensePage> {
+  final _formKey = GlobalKey<FormState>();
+  final _descriptionController = TextEditingController();
+  final _amountController = TextEditingController();
+  String _selectedCategory = 'other';
+  DateTime _selectedDate = DateTime.now();
+  File? _receiptImage;
+  List<Map<String, dynamic>> _members = [];
+  Map<String, double> _splitAmounts = {};
+  String _splitMethod = 'equal';
+
+  @override
+  void initState() {
+    super.initState();
+    _loadGroupMembers();
+  }
+
+  Future<void> _loadGroupMembers() async {
+    final group = await DatabaseService().getGroupById(widget.groupId);
+    if (group != null) {
+      setState(() {
+        _members = List<Map<String, dynamic>>.from(group['members']);
+        
+        // Initialize split amounts
+        final equalAmount = 0.0; // Will be calculated when amount is entered
+        for (var member in _members) {
+          _splitAmounts[member['id']] = equalAmount;
+        }
+      });
+    }
+  }
+
+  Future<void> _pickImage() async {
+    final picker = ImagePicker();
+    final pickedFile = await picker.pickImage(source: ImageSource.gallery);
+    
+    if (pickedFile != null) {
+      setState(() {
+        _receiptImage = File(pickedFile.path);
+      });
+    }
+  }
+
+  void _updateSplitAmounts() {
+    if (_amountController.text.isEmpty) return;
+    
+    final totalAmount = double.tryParse(_amountController.text) ?? 0;
+    
+    if (_splitMethod == 'equal') {
+      final perPersonAmount = totalAmount / _members.length;
+      for (var member in _members) {
+        _splitAmounts[member['id']] = perPersonAmount;
+      }
+    }
+    // Other split methods would be implemented here
+    
+    setState(() {});
+  }
+
+  Future<void> _saveExpense() async {
+    if (!_formKey.currentState!.validate()) return;
+    
+    final description = _descriptionController.text.trim();
+    final amount = double.tryParse(_amountController.text) ?? 0;
+    
+    if (amount <= 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please enter a valid amount')),
+      );
+      return;
+    }
+    
+    // Prepare split data
+    final splitWith = _members.map((member) {
+      return {
+        'userId': member['id'],
+        'amount': _splitAmounts[member['id']] ?? 0.0,
+      };
+    }).toList();
+    
+    // Create expense object
+    final expense = {
+      'id': const Uuid().v4(),
+      'groupId': widget.groupId,
+      'description': description,
+      'amount': amount,
+      'category': _selectedCategory,
+      'date': _selectedDate.toIso8601String(),
+      'paidBy': widget.userId,
+      'splitWith': splitWith,
+      'receiptUrl': null, // Would store image URL in a real app
+      'notes': '',
+      'createdAt': DateTime.now().toIso8601String(),
+    };
+    
+    // Save to database
+    await DatabaseService().addExpense(expense);
+    
+    // Create activity record
+    final activity = {
+      'id': const Uuid().v4(),
+      'type': 'expense_added',
+      'userId': widget.userId,
+      'groupId': widget.groupId,
+      'expenseId': expense['id'],
+      'amount': amount,
+      'timestamp': DateTime.now().toIso8601String(),
+    };
+    
+    await DatabaseService().addActivity(activity);
+    
+    // Update group balances
+    final group = await DatabaseService().getGroupById(widget.groupId);
+    if (group != null) {
+      final members = List<Map<String, dynamic>>.from(group['members']);
+      
+      for (var i = 0; i < members.length; i++) {
+        final member = members[i];
+        final split = splitWith.firstWhere(
+          (s) => s['userId'] == member['id'],
+          orElse: () => {'amount': 0.0},
+        );
+        
+        if (member['id'] == widget.userId) {
+          // Current user paid
+          member['balance'] = (member['balance'] ?? 0.0) + (amount - split['amount']);
+        } else {
+          // Other members
+          member['balance'] = (member['balance'] ?? 0.0) - split['amount'];
+        }
+      }
+      
+      final updatedGroup = {
+        ...group,
+        'members': members,
+      };
+      
+      await DatabaseService().updateGroup(updatedGroup);
+    }
+    
+    if (mounted) {
+      Navigator.of(context).pop();
+    }
+  }
+
+  @override
+  void dispose() {
+    _descriptionController.dispose();
+    _amountController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Add an expense'),
+      ),
+      body: Form(
+        key: _formKey,
+        child: ListView(
+          padding: const EdgeInsets.all(16),
+          children: [
+            // Description
+            TextFormField(
+              controller: _descriptionController,
+              decoration: const InputDecoration(
+                labelText: 'Description',
+                hintText: 'e.g., Dinner, Groceries, Rent',
+              ),
+              validator: (value) {
+                if (value == null || value.isEmpty) {
+                  return 'Please enter a description';
+                }
+                return null;
+              },
+            ),
+            const SizedBox(height: 16),
+            
+            // Amount
+            TextFormField(
+              controller: _amountController,
+              decoration: const InputDecoration(
+                labelText: 'Amount',
+                prefixText: 'PKR ',
+              ),
+              keyboardType: TextInputType.number,
+              validator: (value) {
+                if (value == null || value.isEmpty) {
+                  return 'Please enter an amount';
+                }
+                if (double.tryParse(value) == null || double.parse(value) <= 0) {
+                  return 'Please enter a valid amount';
+                }
+                return null;
+              },
+              onChanged: (_) => _updateSplitAmounts(),
+            ),
+            const SizedBox(height: 16),
+            
+            // Category
+            DropdownButtonFormField<String>(
+              value: _selectedCategory,
+              decoration: const InputDecoration(
+                labelText: 'Category',
+              ),
+              items: [
+                DropdownMenuItem(
+                  value: 'food',
+                  child: Row(
+                    children: [
+                      Icon(Icons.restaurant, color: Colors.orange.shade700),
+                      const SizedBox(width: 8),
+                      const Text('Food & Drink'),
+                    ],
+                  ),
+                ),
+                DropdownMenuItem(
+                  value: 'transport',
+                  child: Row(
+                    children: [
+                      Icon(Icons.directions_car, color: Colors.blue.shade700),
+                      const SizedBox(width: 8),
+                      const Text('Transportation'),
+                    ],
+                  ),
+                ),
+                DropdownMenuItem(
+                  value: 'accommodation',
+                  child: Row(
+                    children: [
+                      Icon(Icons.hotel, color: Colors.purple.shade700),
+                      const SizedBox(width: 8),
+                      const Text('Accommodation'),
+                    ],
+                  ),
+                ),
+                DropdownMenuItem(
+                  value: 'entertainment',
+                  child: Row(
+                    children: [
+                      Icon(Icons.movie, color: Colors.pink.shade700),
+                      const SizedBox(width: 8),
+                      const Text('Entertainment'),
+                    ],
+                  ),
+                ),
+                DropdownMenuItem(
+                  value: 'shopping',
+                  child: Row(
+                    children: [
+                      Icon(Icons.shopping_bag, color: Colors.teal.shade700),
+                      const SizedBox(width: 8),
+                      const Text('Shopping'),
+                    ],
+                  ),
+                ),
+                DropdownMenuItem(
+                  value: 'utilities',
+                  child: Row(
+                    children: [
+                      Icon(Icons.lightbulb, color: Colors.amber.shade700),
+                      const SizedBox(width: 8),
+                      const Text('Utilities'),
+                    ],
+                  ),
+                ),
+                DropdownMenuItem(
+                  value: 'other',
+                  child: Row(
+                    children: [
+                      Icon(Icons.category, color: Colors.grey.shade700),
+                      const SizedBox(width: 8),
+                      const Text('Other'),
+                    ],
+                  ),
+                ),
+              ],
+              onChanged: (value) {
+                if (value != null) {
+                  setState(() {
+                    _selectedCategory = value;
+                  });
+                }
+              },
+            ),
+            const SizedBox(height: 16),
+            
+            // Date
+            ListTile(
+              title: const Text('Date'),
+              subtitle: Text(DateFormat('MMMM d, yyyy').format(_selectedDate)),
+              trailing: const Icon(Icons.calendar_today),
+              onTap: () async {
+                final pickedDate = await showDatePicker(
+                  context: context,
+                  initialDate: _selectedDate,
+                  firstDate: DateTime(2020),
+                  lastDate: DateTime.now().add(const Duration(days: 1)),
+                );
+                
+                if (pickedDate != null) {
+                  setState(() {
+                    _selectedDate = pickedDate;
+                  });
+                }
+              },
+            ),
+            const Divider(),
+            
+            // Receipt
+            ListTile(
+              title: const Text('Add receipt'),
+              subtitle: _receiptImage != null
+                  ? const Text('Receipt added')
+                  : const Text('Add an image of your receipt'),
+              trailing: _receiptImage != null
+                  ? Image.file(_receiptImage!, width: 60, height: 60)
+                  : const Icon(Icons.camera_alt),
+              onTap: _pickImage,
+            ),
+            const Divider(),
+            
+            // Split method
+            const Text(
+              'SPLIT DETAILS',
+              style: TextStyle(
+                fontWeight: FontWeight.bold,
+                color: Colors.grey,
+              ),
+            ),
+            const SizedBox(height: 8),
+            DropdownButtonFormField<String>(
+              value: _splitMethod,
+              decoration: const InputDecoration(
+                labelText: 'Split method',
+              ),
+              items: const [
+                DropdownMenuItem(
+                  value: 'equal',
+                  child: Text('Split equally'),
+                ),
+                DropdownMenuItem(
+                  value: 'exact',
+                  child: Text('Split by exact amounts'),
+                ),
+                DropdownMenuItem(
+                  value: 'percent',
+                  child: Text('Split by percentages'),
+                ),
+                DropdownMenuItem(
+                  value: 'shares',
+                  child: Text('Split by shares'),
+                ),
+              ],
+              onChanged: (value) {
+                if (value != null) {
+                  setState(() {
+                    _splitMethod = value;
+                    _updateSplitAmounts();
+                  });
+                }
+              },
+            ),
+            const SizedBox(height: 16),
+            
+            // Members list
+            ..._members.map((member) {
+              return FutureBuilder<Map<String, dynamic>?>(
+                future: DatabaseService().getUserById(member['id']),
+                builder: (context, snapshot) {
+                  final userName = snapshot.data?['name'] ?? 'Unknown';
+                  final isCurrentUser = member['id'] == widget.userId;
+                  
+                  return ListTile(
+                    leading: CircleAvatar(
+                      backgroundColor: Colors.primaries[
+                        userName.hashCode % Colors.primaries.length
+                      ],
+                      child: Text(
+                        userName.substring(0, 1).toUpperCase(),
+                        style: const TextStyle(color: Colors.white),
+                      ),
+                    ),
+                    title: Text(
+                      isCurrentUser ? 'You' : userName,
+                      style: const TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                    trailing: Text(
+                      'PKR ${(_splitAmounts[member['id']] ?? 0).toStringAsFixed(2)}',
+                      style: const TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                  );
+                },
+              );
+            }).toList(),
+            
+            const SizedBox(height: 32),
+            
+            // Save button
+            ElevatedButton(
+              onPressed: _saveExpense,
+              child: const Text('Save expense'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// Activity Tab
+class ActivityTab extends StatefulWidget {
+  final String userId;
+
+  const ActivityTab({super.key, required this.userId});
+
+  @override
+  State<ActivityTab> createState() => _ActivityTabState();
+}
+
+class _ActivityTabState extends State<ActivityTab> {
+  late Future<List<Map<String, dynamic>>> _activitiesFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadActivities();
+  }
+
+  Future<void> _loadActivities() async {
+    _activitiesFuture = DatabaseService().getActivitiesByUserId(widget.userId);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Recent activity'),
+      ),
+      body: RefreshIndicator(
+        onRefresh: () async {
+          setState(() {
+            _loadActivities();
+          });
+        },
+        child: FutureBuilder<List<Map<String, dynamic>>>(
+          future: _activitiesFuture,
+          builder: (context, snapshot) {
+            if (snapshot.connectionState == ConnectionState.waiting) {
+              return const Center(child: CircularProgressIndicator());
+            }
+
+            if (snapshot.hasError) {
+              return Center(child: Text('Error: ${snapshot.error}'));
+            }
+
+            final activities = snapshot.data ?? [];
+            
+            if (activities.isEmpty) {
+              return const Center(
+                child: Text('No recent activity'),
+              );
+            }
+            
+            return ListView.builder(
+              itemCount: activities.length,
+              itemBuilder: (context, index) {
+                final activity = activities[index];
+                return ActivityListItem(
+                  activity: activity,
+                  userId: widget.userId,
+                );
+              },
+            );
+          },
+        ),
+      ),
+    );
+  }
+}
+
+// Activity List Item
+class ActivityListItem extends StatelessWidget {
+  final Map<String, dynamic> activity;
+  final String userId;
+
+  const ActivityListItem({
+    super.key,
+    required this.activity,
+    required this.userId,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final timestamp = DateTime.parse(activity['timestamp']);
+    final formattedDate = DateFormat('MMM d, yyyy \'at\' h:mm a').format(timestamp);
+    
+    return FutureBuilder<Map<String, dynamic>?>(
+      future: _getUserData(),
+      builder: (context, userSnapshot) {
+        if (userSnapshot.connectionState == ConnectionState.waiting) {
+          return const ListTile(
+            title: Text('Loading...'),
+          );
+        }
+        
+        final userData = userSnapshot.data;
+        
+        return FutureBuilder<Map<String, dynamic>?>(
+          future: _getRelatedData(),
+          builder: (context, relatedSnapshot) {
+            final relatedData = relatedSnapshot.data;
+            
+            return ListTile(
+              leading: _buildLeadingIcon(),
+              title: _buildTitle(userData, relatedData),
+              subtitle: Text(formattedDate),
+              onTap: () {
+                // Show activity details
+              },
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Future<Map<String, dynamic>?> _getUserData() async {
+    if (activity['userId'] != null) {
+      return DatabaseService().getUserById(activity['userId']);
+    }
+    return null;
+  }
+
+  Future<Map<String, dynamic>?> _getRelatedData() async {
+    if (activity['type'] == 'expense_added' || activity['type'] == 'expense_updated') {
+      if (activity['groupId'] != null) {
+        return DatabaseService().getGroupById(activity['groupId']);
+      }
+    } else if (activity['type'] == 'payment_recorded' || activity['type'] == 'payment_received') {
+      if (activity['relatedUserId'] != null) {
+        return DatabaseService().getUserById(activity['relatedUserId']);
+      }
+    }
+    return null;
+  }
+
+  Widget _buildLeadingIcon() {
+    switch (activity['type']) {
+      case 'expense_added':
+        return Container(
+          width: 40,
+          height: 40,
+          decoration: BoxDecoration(
+            color: Colors.green.shade100,
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: const Icon(Icons.receipt, color: Colors.green),
+        );
+      case 'payment_recorded':
+      case 'payment_received':
+        return Container(
+          width: 40,
+          height: 40,
+          decoration: BoxDecoration(
+            color: Colors.blue.shade100,
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: const Icon(Icons.payments, color: Colors.blue),
+        );
+      default:
+        return Container(
+          width: 40,
+          height: 40,
+          decoration: BoxDecoration(
+            color: Colors.grey.shade100,
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: const Icon(Icons.info, color: Colors.grey),
+        );
+    }
+  }
+
+  Widget _buildTitle(Map<String, dynamic>? userData, Map<String, dynamic>? relatedData) {
+    final isCurrentUser = activity['userId'] == userId;
+    final userName = userData?['name'] ?? 'Unknown';
+    
+    switch (activity['type']) {
+      case 'expense_added':
+        final groupName = relatedData?['name'] ?? 'a group';
+        return RichText(
+          text: TextSpan(
+            style: const TextStyle(color: Colors.black),
+            children: [
+              TextSpan(
+                text: isCurrentUser ? 'You' : userName,
+                style: const TextStyle(fontWeight: FontWeight.bold),
+              ),
+              const TextSpan(text: ' added '),
+              TextSpan(
+                text: activity['description'] ?? 'an expense',
+                style: const TextStyle(fontWeight: FontWeight.bold),
+              ),
+              const TextSpan(text: ' in '),
+              TextSpan(
+                text: groupName,
+                style: const TextStyle(fontWeight: FontWeight.bold),
+              ),
+              const TextSpan(text: '.'),
+            ],
+          ),
+        );
+      case 'payment_recorded':
+        final relatedUserName = relatedData?['name'] ?? 'someone';
+        return RichText(
+          text: TextSpan(
+            style: const TextStyle(color: Colors.black),
+            children: [
+              TextSpan(
+                text: isCurrentUser ? 'You' : userName,
+                style: const TextStyle(fontWeight: FontWeight.bold),
+              ),
+              const TextSpan(text: ' recorded a payment from '),
+              TextSpan(
+                text: relatedUserName,
+                style: const TextStyle(fontWeight: FontWeight.bold),
+              ),
+              const TextSpan(text: '.'),
+            ],
+          ),
+        );
+      case 'payment_received':
+        final relatedUserName = relatedData?['name'] ?? 'someone';
+        return RichText(
+          text: TextSpan(
+            style: const TextStyle(color: Colors.black),
+            children: [
+              TextSpan(
+                text: isCurrentUser ? 'You' : userName,
+                style: const TextStyle(fontWeight: FontWeight.bold),
+              ),
+              const TextSpan(text: ' paid '),
+              TextSpan(
+                text: relatedUserName,
+                style: const TextStyle(fontWeight: FontWeight.bold),
+              ),
+              const TextSpan(text: '.'),
+            ],
+          ),
+        );
+      default:
+        return Text(
+          isCurrentUser ? 'You performed an action' : '$userName performed an action',
+        );
+    }
+  }
+}
+
+// Account Tab
+class AccountTab extends StatelessWidget {
+  final Map<String, dynamic> user;
+
+  const AccountTab({super.key, required this.user});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Account'),
+      ),
+      body: ListView(
+        children: [
+          const Padding(
+            padding: EdgeInsets.all(16.0),
+            child: Text(
+              'Settings',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+                color: Colors.grey,
+              ),
+            ),
+          ),
+          ListTile(
+            leading: CircleAvatar(
+              backgroundColor: Colors.red.shade700,
+              child: Text(
+                user['name'].substring(0, 1).toUpperCase(),
+                style: const TextStyle(color: Colors.white),
+              ),
+            ),
+            title: Text(
+              user['name'],
+              style: const TextStyle(fontWeight: FontWeight.bold),
+            ),
+            subtitle: Text(user['email']),
+            trailing: const Icon(Icons.camera_alt),
+            onTap: () {
+              // Edit profile
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => EditProfilePage(user: user),
+                ),
+              );
+            },
+          ),
+          const Divider(),
+          ListTile(
+            leading: const Icon(Icons.qr_code),
+            title: const Text('Scan code'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () {
+              // Scan QR code
+            },
+          ),
+          ListTile(
+            leading: const Icon(Icons.diamond, color: Colors.purple),
+            title: const Text('Splitwise Pro'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () {
+              // Upgrade to Pro
+            },
+          ),
+          const Divider(),
+          const Padding(
+            padding: EdgeInsets.all(16.0),
+            child: Text(
+              'Preferences',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+                color: Colors.grey,
+              ),
+            ),
+          ),
+          ListTile(
+            leading: const Icon(Icons.notifications),
+            title: const Text('Notifications'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () {
+              // Notification settings
+            },
+          ),
+          ListTile(
+            leading: const Icon(Icons.security),
+            title: const Text('Security'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () {
+              // Security settings
+            },
+          ),
+          const Divider(),
+          const Padding(
+            padding: EdgeInsets.all(16.0),
+            child: Text(
+              'Feedback',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+                color: Colors.grey,
+              ),
+            ),
+          ),
+          ListTile(
+            leading: const Icon(Icons.star),
+            title: const Text('Rate Splitwise'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () {
+              // Rate app
+            },
+          ),
+          ListTile(
+            leading: const Icon(Icons.contact_support),
+            title: const Text('Contact us'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () {
+              // Contact support
+            },
+          ),
+          const SizedBox(height: 16),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16.0),
+            child: ElevatedButton(
+              onPressed: () async {
+                await AuthService().logout();
+                if (context.mounted) {
+                  Navigator.of(context).pushAndRemoveUntil(
+                    MaterialPageRoute(builder: (_) => const WelcomePage()),
+                    (route) => false,
+                  );
+                }
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.red,
+              ),
+              child: const Text('Log out'),
+            ),
+          ),
+          const SizedBox(height: 32),
+        ],
+      ),
+    );
+  }
+}
+
+// Edit Profile Page
+class EditProfilePage extends StatefulWidget {
+  final Map<String, dynamic> user;
+
+  const EditProfilePage({super.key, required this.user});
+
+  @override
+  State<EditProfilePage> createState() => _EditProfilePageState();
+}
+
+class _EditProfilePageState extends State<EditProfilePage> {
+  final _formKey = GlobalKey<FormState>();
+  late TextEditingController _nameController;
+  late TextEditingController _emailController;
+  File? _profileImage;
+  bool _isLoading = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _nameController = TextEditingController(text: widget.user['name']);
+    _emailController = TextEditingController(text: widget.user['email']);
+  }
+
+  Future<void> _pickImage() async {
+    final picker = ImagePicker();
+    final pickedFile = await picker.pickImage(source: ImageSource.gallery);
+    
+    if (pickedFile != null) {
+      setState(() {
+        _profileImage = File(pickedFile.path);
+      });
+    }
+  }
+
+  Future<void> _saveProfile() async {
+    if (!_formKey.currentState!.validate()) return;
+    
+    setState(() {
+      _isLoading = true;
+    });
+    
+    try {
+      final updatedUser = {
+        ...widget.user,
+        'name': _nameController.text.trim(),
+        'email': _emailController.text.trim(),
+        // In a real app, you would upload the image and store the URL
+        'profilePicture': _profileImage != null ? 'profile_image_url' : widget.user['profilePicture'],
+      };
+      
+      final success = await AuthService().updateProfile(updatedUser);
+      
+      if (mounted) {
+        if (success) {
+          Navigator.of(context).pop();
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Failed to update profile')),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('An error occurred')),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    _nameController.dispose();
+    _emailController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Edit Profile'),
+      ),
+      body: Form(
+        key: _formKey,
+        child: ListView(
+          padding: const EdgeInsets.all(16),
+          children: [
+            Center(
+              child: Stack(
+                children: [
+                  CircleAvatar(
+                    radius: 60,
+                    backgroundColor: Colors.red.shade700,
+                    backgroundImage: _profileImage != null
+                        ? FileImage(_profileImage!)
+                        : null,
+                    child: _profileImage == null
+                        ? Text(
+                            widget.user['name'].substring(0, 1).toUpperCase(),
+                            style: const TextStyle(
+                              fontSize: 40,
+                              color: Colors.white,
+                            ),
+                          )
+                        : null,
+                  ),
+                  Positioned(
+                    bottom: 0,
+                    right: 0,
+                    child: CircleAvatar(
+                      backgroundColor: Theme.of(context).primaryColor,
+                      radius: 20,
+                      child: IconButton(
+                        icon: const Icon(Icons.camera_alt, color: Colors.white),
+                        onPressed: _pickImage,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 24),
+            TextFormField(
+              controller: _nameController,
+              decoration: const InputDecoration(
+                labelText: 'Full Name',
+                prefixIcon: Icon(Icons.person),
+              ),
+              validator: (value) {
+                if (value == null || value.isEmpty) {
+                  return 'Please enter your name';
+                }
+                return null;
+              },
+            ),
+            const SizedBox(height: 16),
+            TextFormField(
+              controller: _emailController,
+              decoration: const InputDecoration(
+                labelText: 'Email',
+                prefixIcon: Icon(Icons.email),
+              ),
+              keyboardType: TextInputType.emailAddress,
+              validator: (value) {
+                if (value == null || value.isEmpty) {
+                  return 'Please enter your email';
+                }
+                if (!RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$').hasMatch(value)) {
+                  return 'Please enter a valid email';
+                }
+                return null;
+              },
+            ),
+            const SizedBox(height: 32),
+            ElevatedButton(
+              onPressed: _isLoading ? null : _saveProfile,
+              child: _isLoading
+                  ? const SizedBox(
+                      height: 20,
+                      width: 20,
+                      child: CircularProgressIndicator(
+                        color: Colors.white,
+                        strokeWidth: 2,
+                      ),
+                    )
+                  : const Text('Save Profile'),
+            ),
+          ],
         ),
       ),
     );
