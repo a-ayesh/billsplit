@@ -10,6 +10,7 @@ import 'package:uuid/uuid.dart';
 import 'dart:html' as html;
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:logging/logging.dart';
+import 'package:fl_chart/fl_chart.dart';
 
 void main() async {
   Logger.root.level = Level.ALL;
@@ -3412,61 +3413,553 @@ class ActivityTab extends StatefulWidget {
 
 class _ActivityTabState extends State<ActivityTab> {
   late Future<List<Map<String, dynamic>>> _activitiesFuture;
+  late Future<Map<String, dynamic>> _balancesFuture;
 
   @override
   void initState() {
     super.initState();
-    _loadActivities();
+    _loadData();
   }
 
-  Future<void> _loadActivities() async {
+  Future<void> _loadData() async {
     _activitiesFuture = DatabaseService().getActivitiesByUserId(widget.userId);
+    _balancesFuture = DatabaseService().calculateBalances(widget.userId);
   }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Recent activity'),
-      ),
-      body: RefreshIndicator(
-        onRefresh: () async {
-          setState(() {
-            _loadActivities();
-          });
-        },
-        child: FutureBuilder<List<Map<String, dynamic>>>(
-          future: _activitiesFuture,
-          builder: (context, snapshot) {
-            if (snapshot.connectionState == ConnectionState.waiting) {
-              return const Center(child: CircularProgressIndicator());
-            }
-
-            if (snapshot.hasError) {
-              return Center(child: Text('Error: ${snapshot.error}'));
-            }
-
-            final activities = snapshot.data ?? [];
-            
-            if (activities.isEmpty) {
-              return const Center(
-                child: Text('No recent activity'),
-              );
-            }
-            
-            return ListView.builder(
-              itemCount: activities.length,
-              itemBuilder: (context, index) {
-                final activity = activities[index];
-                return ActivityListItem(
-                  activity: activity,
-                  userId: widget.userId,
-                );
+    return DefaultTabController(
+      length: 2,
+      child: Scaffold(
+        appBar: AppBar(
+          title: const Text('Activity'),
+          bottom: TabBar(
+            tabs: [
+              Tab(
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Icon(Icons.pie_chart),
+                    const SizedBox(width: 8),
+                    Text(
+                      'Overview',
+                      style: TextStyle(
+                        color: Theme.of(context).primaryColor,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Tab(
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Icon(Icons.history),
+                    const SizedBox(width: 8),
+                    Text(
+                      'Activity',
+                      style: TextStyle(
+                        color: Theme.of(context).primaryColor,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+            labelColor: Theme.of(context).primaryColor,
+            unselectedLabelColor: Colors.grey,
+            indicatorColor: Theme.of(context).primaryColor,
+          ),
+        ),
+        body: TabBarView(
+          children: [
+            // Overview Tab
+            RefreshIndicator(
+              onRefresh: () async {
+                setState(() {
+                  _loadData();
+                });
               },
-            );
-          },
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'EXPENSE OVERVIEW',
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.grey,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    FutureBuilder<Map<String, dynamic>>(
+                      future: _balancesFuture,
+                      builder: (context, snapshot) {
+                        if (snapshot.connectionState == ConnectionState.waiting) {
+                          return const SizedBox(
+                            height: 200,
+                            child: Center(child: CircularProgressIndicator()),
+                          );
+                        }
+
+                        if (snapshot.hasError || !snapshot.hasData) {
+                          return const SizedBox(
+                            height: 200,
+                            child: Center(child: Text('Failed to load balance data')),
+                          );
+                        }
+
+                        return ExpenseOverviewChart(balances: snapshot.data!);
+                      },
+                    ),
+                  ],
+                ),
+              ),
+            ),
+
+            // Activity Tab
+            RefreshIndicator(
+              onRefresh: () async {
+                setState(() {
+                  _loadData();
+                });
+              },
+              child: FutureBuilder<List<Map<String, dynamic>>>(
+                future: _activitiesFuture,
+                builder: (context, snapshot) {
+                  if (snapshot.connectionState == ConnectionState.waiting) {
+                    return const Center(child: CircularProgressIndicator());
+                  }
+
+                  if (snapshot.hasError) {
+                    return Center(child: Text('Error: ${snapshot.error}'));
+                  }
+
+                  final activities = snapshot.data ?? [];
+                  
+                  if (activities.isEmpty) {
+                    return Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            Icons.history,
+                            size: 64,
+                            color: Colors.grey.shade400,
+                          ),
+                          const SizedBox(height: 16),
+                          Text(
+                            'No recent activity',
+                            style: TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.grey.shade600,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            'Add some expenses to see activity here',
+                            style: TextStyle(
+                              color: Colors.grey.shade600,
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  }
+                  
+                  return ListView.builder(
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                    itemCount: activities.length,
+                    itemBuilder: (context, index) {
+                      final activity = activities[index];
+                      return ActivityListItem(
+                        activity: activity,
+                        userId: widget.userId,
+                      );
+                    },
+                  );
+                },
+              ),
+            ),
+          ],
         ),
       ),
+    );
+  }
+}
+
+// Expense Overview Chart
+class ExpenseOverviewChart extends StatelessWidget {
+  final Map<String, dynamic> balances;
+
+  const ExpenseOverviewChart({
+    super.key,
+    required this.balances,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final userBalances = List<Map<String, dynamic>>.from(balances['userBalances']);
+    final owedBalances = userBalances.where((b) => b['type'] == 'owed').toList();
+    final oweBalances = userBalances.where((b) => b['type'] == 'owe').toList();
+
+    // Sort balances by amount
+    owedBalances.sort((a, b) => (b['amount'] as num).compareTo(a['amount'] as num));
+    oweBalances.sort((a, b) => (b['amount'] as num).compareTo(a['amount'] as num));
+
+    // Take top 5 for each category
+    final topOwed = owedBalances.take(5).toList();
+    final topOwe = oweBalances.take(5).toList();
+
+    // Calculate total amounts
+    final totalOwed = owedBalances.fold<double>(0, (sum, b) => sum + (b['amount'] as num));
+    final totalOwe = oweBalances.fold<double>(0, (sum, b) => sum + (b['amount'] as num));
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Summary cards
+        Row(
+          children: [
+            Expanded(
+              child: Card(
+                elevation: 2,
+                child: Padding(
+                  padding: const EdgeInsets.all(16.0),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(8),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF1CC29F).withOpacity(0.1),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: const Icon(
+                              Icons.arrow_upward,
+                              color: Color(0xFF1CC29F),
+                              size: 20,
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          const Text(
+                            'you are owed',
+                            style: TextStyle(
+                              color: Colors.grey,
+                              fontSize: 14,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'PKR ${totalOwed.toStringAsFixed(0)}',
+                        style: const TextStyle(
+                          fontSize: 24,
+                          fontWeight: FontWeight.bold,
+                          color: Color(0xFF1CC29F),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Card(
+                elevation: 2,
+                child: Padding(
+                  padding: const EdgeInsets.all(16.0),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(8),
+                            decoration: BoxDecoration(
+                              color: Colors.orange.withOpacity(0.1),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: const Icon(
+                              Icons.arrow_downward,
+                              color: Colors.orange,
+                              size: 20,
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          const Text(
+                            'you owe',
+                            style: TextStyle(
+                              color: Colors.grey,
+                              fontSize: 14,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'PKR ${totalOwe.toStringAsFixed(0)}',
+                        style: const TextStyle(
+                          fontSize: 24,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.orange,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 24),
+
+        // Charts
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // You are owed
+            if (topOwed.isNotEmpty)
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Top owed by',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.grey.shade800,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    SizedBox(
+                      height: 200,
+                      child: BarChart(
+                        BarChartData(
+                          alignment: BarChartAlignment.spaceAround,
+                          maxY: topOwed.isEmpty ? 10 : (topOwed.first['amount'] * 1.2),
+                          titlesData: FlTitlesData(
+                            show: true,
+                            rightTitles: const AxisTitles(
+                              sideTitles: SideTitles(showTitles: false),
+                            ),
+                            topTitles: const AxisTitles(
+                              sideTitles: SideTitles(showTitles: false),
+                            ),
+                            leftTitles: AxisTitles(
+                              sideTitles: SideTitles(
+                                showTitles: true,
+                                getTitlesWidget: (value, meta) {
+                                  // Format large numbers with K suffix
+                                  String formattedValue;
+                                  if (value >= 1000) {
+                                    formattedValue = '${(value / 1000).toStringAsFixed(0)}K';
+                                  } else {
+                                    formattedValue = value.toInt().toString();
+                                  }
+                                  return Padding(
+                                    padding: const EdgeInsets.only(right: 8),
+                                    child: Text(
+                                      'PKR $formattedValue',
+                                      style: TextStyle(
+                                        color: Colors.grey.shade600,
+                                        fontSize: 10,
+                                      ),
+                                    ),
+                                  );
+                                },
+                                reservedSize: 60,
+                                interval: (topOwed.first['amount'] / 4).roundToDouble(),
+                              ),
+                            ),
+                            bottomTitles: AxisTitles(
+                              sideTitles: SideTitles(
+                                showTitles: true,
+                                getTitlesWidget: (value, meta) {
+                                  if (value.toInt() >= topOwed.length) return const Text('');
+                                  return Padding(
+                                    padding: const EdgeInsets.only(top: 8),
+                                    child: Text(
+                                      topOwed[value.toInt()]['name'].toString().split(' ')[0],
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        color: Colors.grey.shade800,
+                                        fontWeight: FontWeight.w500,
+                                      ),
+                                    ),
+                                  );
+                                },
+                              ),
+                            ),
+                          ),
+                          borderData: FlBorderData(show: false),
+                          gridData: FlGridData(
+                            show: true,
+                            drawVerticalLine: false,
+                            horizontalInterval: topOwed.first['amount'] / 5,
+                            getDrawingHorizontalLine: (value) {
+                              return FlLine(
+                                color: Colors.grey.shade200,
+                                strokeWidth: 1,
+                              );
+                            },
+                          ),
+                          barGroups: List.generate(
+                            topOwed.length,
+                            (index) => BarChartGroupData(
+                              x: index,
+                              barRods: [
+                                BarChartRodData(
+                                  toY: topOwed[index]['amount'],
+                                  color: const Color(0xFF1CC29F),
+                                  width: 16,
+                                  borderRadius: const BorderRadius.vertical(
+                                    top: Radius.circular(4),
+                                    bottom: Radius.circular(0),
+                                  ),
+                                  backDrawRodData: BackgroundBarChartRodData(
+                                    show: true,
+                                    toY: topOwed.first['amount'] * 1.2,
+                                    color: Colors.grey.shade100,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            if (topOwed.isNotEmpty && topOwe.isNotEmpty)
+              const SizedBox(width: 24),
+            // You owe
+            if (topOwe.isNotEmpty)
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Top you owe',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.grey.shade800,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    SizedBox(
+                      height: 200,
+                      child: BarChart(
+                        BarChartData(
+                          alignment: BarChartAlignment.spaceAround,
+                          maxY: topOwe.isEmpty ? 10 : (topOwe.first['amount'] * 1.2),
+                          titlesData: FlTitlesData(
+                            show: true,
+                            rightTitles: const AxisTitles(
+                              sideTitles: SideTitles(showTitles: false),
+                            ),
+                            topTitles: const AxisTitles(
+                              sideTitles: SideTitles(showTitles: false),
+                            ),
+                            leftTitles: AxisTitles(
+                              sideTitles: SideTitles(
+                                showTitles: true,
+                                getTitlesWidget: (value, meta) {
+                                  // Format large numbers with K suffix
+                                  String formattedValue;
+                                  if (value >= 1000) {
+                                    formattedValue = '${(value / 1000).toStringAsFixed(0)}K';
+                                  } else {
+                                    formattedValue = value.toInt().toString();
+                                  }
+                                  return Padding(
+                                    padding: const EdgeInsets.only(right: 8),
+                                    child: Text(
+                                      'PKR $formattedValue',
+                                      style: TextStyle(
+                                        color: Colors.grey.shade600,
+                                        fontSize: 10,
+                                      ),
+                                    ),
+                                  );
+                                },
+                                reservedSize: 60,
+                                interval: (topOwe.first['amount'] / 4).roundToDouble(),
+                              ),
+                            ),
+                            bottomTitles: AxisTitles(
+                              sideTitles: SideTitles(
+                                showTitles: true,
+                                getTitlesWidget: (value, meta) {
+                                  if (value.toInt() >= topOwe.length) return const Text('');
+                                  return Padding(
+                                    padding: const EdgeInsets.only(top: 8),
+                                    child: Text(
+                                      topOwe[value.toInt()]['name'].toString().split(' ')[0],
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        color: Colors.grey.shade800,
+                                        fontWeight: FontWeight.w500,
+                                      ),
+                                    ),
+                                  );
+                                },
+                              ),
+                            ),
+                          ),
+                          borderData: FlBorderData(show: false),
+                          gridData: FlGridData(
+                            show: true,
+                            drawVerticalLine: false,
+                            horizontalInterval: topOwe.first['amount'] / 5,
+                            getDrawingHorizontalLine: (value) {
+                              return FlLine(
+                                color: Colors.grey.shade200,
+                                strokeWidth: 1,
+                              );
+                            },
+                          ),
+                          barGroups: List.generate(
+                            topOwe.length,
+                            (index) => BarChartGroupData(
+                              x: index,
+                              barRods: [
+                                BarChartRodData(
+                                  toY: topOwe[index]['amount'],
+                                  color: Colors.orange,
+                                  width: 16,
+                                  borderRadius: const BorderRadius.vertical(
+                                    top: Radius.circular(4),
+                                    bottom: Radius.circular(0),
+                                  ),
+                                  backDrawRodData: BackgroundBarChartRodData(
+                                    show: true,
+                                    toY: topOwe.first['amount'] * 1.2,
+                                    color: Colors.grey.shade100,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+          ],
+        ),
+      ],
     );
   }
 }
