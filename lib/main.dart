@@ -557,6 +557,83 @@ class DatabaseService {
     
     return transactions;
   }
+
+  // Delete Methods
+  Future<void> removeFriend(String userId, String friendId) async {
+    final users = await getUsers();
+    final userIndex = users.indexWhere((user) => user['id'] == userId);
+    final friendIndex = users.indexWhere((user) => user['id'] == friendId);
+    
+    if (userIndex != -1 && friendIndex != -1) {
+      // Remove friend from user's friends list
+      users[userIndex]['friends'] ??= [];
+      users[userIndex]['friends'].remove(friendId);
+      
+      // Remove user from friend's friends list
+      users[friendIndex]['friends'] ??= [];
+      users[friendIndex]['friends'].remove(userId);
+      
+      await _writeJsonFile(_usersFileName, users);
+    }
+  }
+
+  Future<void> deleteGroup(String groupId) async {
+    // Delete group
+    final groups = await getGroups();
+    groups.removeWhere((group) => group['id'] == groupId);
+    await _writeJsonFile(_groupsFileName, groups);
+    
+    // Delete associated expenses
+    final expenses = await getExpenses();
+    expenses.removeWhere((expense) => expense['groupId'] == groupId);
+    await _writeJsonFile(_expensesFileName, expenses);
+  }
+
+  Future<void> deleteExpense(String expenseId) async {
+    final expenses = await getExpenses();
+    final expenseIndex = expenses.indexWhere((expense) => expense['id'] == expenseId);
+    
+    if (expenseIndex != -1) {
+      final expense = expenses[expenseIndex];
+      final groupId = expense['groupId'];
+      final group = await getGroupById(groupId);
+      
+      if (group != null) {
+        // Reverse the balances
+        final members = List<Map<String, dynamic>>.from(group['members']);
+        final splitWith = List<Map<String, dynamic>>.from(expense['splitWith']);
+        final amount = expense['amount'];
+        final paidBy = expense['paidBy'];
+        
+        for (var i = 0; i < members.length; i++) {
+          final member = members[i];
+          final split = splitWith.firstWhere(
+            (s) => s['userId'] == member['id'],
+            orElse: () => {'amount': 0.0},
+          );
+          
+          if (member['id'] == paidBy) {
+            // Reverse payer's balance
+            member['balance'] = (member['balance'] ?? 0.0) - (amount - split['amount']);
+          } else {
+            // Reverse other members' balances
+            member['balance'] = (member['balance'] ?? 0.0) + split['amount'];
+          }
+        }
+        
+        // Update group with reversed balances
+        final updatedGroup = {
+          ...group,
+          'members': members,
+        };
+        await updateGroup(updatedGroup);
+      }
+      
+      // Remove the expense
+      expenses.removeAt(expenseIndex);
+      await _writeJsonFile(_expensesFileName, expenses);
+    }
+  }
 }
 
 // Auth Service
@@ -1399,6 +1476,38 @@ class _FriendsTabState extends State<FriendsTab> {
     }
   }
 
+  Future<bool?> _removeFriend(Map<String, dynamic> friend) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Remove Friend'),
+        content: Text('Are you sure you want to remove ${friend['name']} from your friends?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            style: TextButton.styleFrom(
+              foregroundColor: Colors.red,
+            ),
+            child: const Text('Remove'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      await DatabaseService().removeFriend(widget.userId, friend['id']);
+      setState(() {
+        _loadData();
+      });
+      return true;
+    }
+    return false;
+  }
+
   @override
   void dispose() {
     _searchController.dispose();
@@ -1542,39 +1651,53 @@ class _FriendsTabState extends State<FriendsTab> {
                         final isSettled = balance?['type'] == 'settled';
                         final amount = balance?['amount'] ?? 0.0;
                         
-                        return ListTile(
-                          leading: CircleAvatar(
-                            backgroundColor: isOwed 
-                                ? Colors.red.shade700 
-                                : isSettled 
-                                    ? Colors.blue.shade700 
-                                    : Colors.green.shade700,
-                            child: Text(
-                              friend['name'].substring(0, 1).toUpperCase(),
-                              style: const TextStyle(color: Colors.white),
+                        return Dismissible(
+                          key: Key(friend['id']),
+                          direction: DismissDirection.endToStart,
+                          background: Container(
+                            alignment: Alignment.centerRight,
+                            padding: const EdgeInsets.only(right: 20.0),
+                            color: Colors.red,
+                            child: const Icon(
+                              Icons.delete,
+                              color: Colors.white,
                             ),
                           ),
-                          title: Text(
-                            friend['name'],
-                            style: const TextStyle(
-                              fontWeight: FontWeight.bold,
+                          confirmDismiss: (_) => _removeFriend(friend),
+                          child: ListTile(
+                            leading: CircleAvatar(
+                              backgroundColor: isOwed 
+                                  ? Colors.red.shade700 
+                                  : isSettled 
+                                      ? Colors.blue.shade700 
+                                      : Colors.green.shade700,
+                              child: Text(
+                                friend['name'].substring(0, 1).toUpperCase(),
+                                style: const TextStyle(color: Colors.white),
+                              ),
                             ),
-                          ),
-                          subtitle: Text(friend['email']),
-                          trailing: isSettled 
-                              ? const Text('settled up')
-                              : Text(
-                                  isOwed 
-                                      ? 'owes you PKR ${amount.toStringAsFixed(2)}'
-                                      : 'you owe PKR ${amount.toStringAsFixed(2)}',
-                                  style: TextStyle(
-                                    color: isOwed ? const Color(0xFF1CC29F) : Colors.orange,
-                                    fontWeight: FontWeight.bold,
+                            title: Text(
+                              friend['name'],
+                              style: const TextStyle(
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            subtitle: Text(friend['email']),
+                            trailing: isSettled 
+                                ? const Text('settled up')
+                                : Text(
+                                    isOwed 
+                                        ? 'owes you PKR ${amount.toStringAsFixed(2)}'
+                                        : 'you owe PKR ${amount.toStringAsFixed(2)}',
+                                    style: TextStyle(
+                                      color: isOwed ? const Color(0xFF1CC29F) : Colors.orange,
+                                      fontWeight: FontWeight.bold,
+                                    ),
                                   ),
-                                ),
-                          onTap: () {
-                            // Navigate to friend details
-                          },
+                            onTap: () {
+                              // Navigate to friend details
+                            },
+                          ),
                         );
                       }).toList(),
                   ],
@@ -1739,6 +1862,38 @@ class _GroupsTabState extends State<GroupsTab> {
     }
   }
 
+  Future<bool?> _deleteGroup(Map<String, dynamic> group) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete Group'),
+        content: Text('Are you sure you want to delete "${group['name']}"? This will delete all associated expenses and cannot be undone.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            style: TextButton.styleFrom(
+              foregroundColor: Colors.red,
+            ),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      await DatabaseService().deleteGroup(group['id']);
+      setState(() {
+        _loadData();
+      });
+      return true;
+    }
+    return false;
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -1873,60 +2028,74 @@ class _GroupsTabState extends State<GroupsTab> {
                         final groupBalance = _calculateGroupBalance(group, widget.userId);
                         final isOwed = groupBalance > 0;
                         
-                        return ListTile(
-                          leading: group['icon'] != null
-                              ? Image.asset(group['icon'], width: 40, height: 40)
-                              : Container(
-                                  width: 40,
-                                  height: 40,
-                                  decoration: BoxDecoration(
-                                    color: Colors.primaries[
-                                      group['name'].hashCode % Colors.primaries.length
-                                    ],
-                                    borderRadius: BorderRadius.circular(8),
-                                  ),
-                                  child: Center(
-                                    child: Text(
-                                      group['name'].substring(0, 1).toUpperCase(),
-                                      style: const TextStyle(
-                                        color: Colors.white,
-                                        fontWeight: FontWeight.bold,
-                                        fontSize: 18,
+                        return Dismissible(
+                          key: Key(group['id']),
+                          direction: DismissDirection.endToStart,
+                          background: Container(
+                            alignment: Alignment.centerRight,
+                            padding: const EdgeInsets.only(right: 20.0),
+                            color: Colors.red,
+                            child: const Icon(
+                              Icons.delete,
+                              color: Colors.white,
+                            ),
+                          ),
+                          confirmDismiss: (_) => _deleteGroup(group),
+                          child: ListTile(
+                            leading: group['icon'] != null
+                                ? Image.asset(group['icon'], width: 40, height: 40)
+                                : Container(
+                                    width: 40,
+                                    height: 40,
+                                    decoration: BoxDecoration(
+                                      color: Colors.primaries[
+                                        group['name'].hashCode % Colors.primaries.length
+                                      ],
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                    child: Center(
+                                      child: Text(
+                                        group['name'].substring(0, 1).toUpperCase(),
+                                        style: const TextStyle(
+                                          color: Colors.white,
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 18,
+                                        ),
                                       ),
                                     ),
                                   ),
-                                ),
-                          title: Text(
-                            group['name'],
-                            style: const TextStyle(
-                              fontWeight: FontWeight.bold,
+                            title: Text(
+                              group['name'],
+                              style: const TextStyle(
+                                fontWeight: FontWeight.bold,
+                              ),
                             ),
-                          ),
-                          subtitle: Text(
-                            '${(group['members'] as List).length} members',
-                            style: TextStyle(color: Colors.grey.shade600),
-                          ),
-                          trailing: groupBalance == 0
-                              ? const Text('settled up')
-                              : Text(
-                                  isOwed 
-                                      ? 'you are owed\nPKR ${groupBalance.abs().toStringAsFixed(2)}'
-                                      : 'you owe\nPKR ${groupBalance.abs().toStringAsFixed(2)}',
-                                  textAlign: TextAlign.right,
-                                  style: TextStyle(
-                                    color: isOwed ? const Color(0xFF1CC29F) : Colors.orange,
+                            subtitle: Text(
+                              '${(group['members'] as List).length} members',
+                              style: TextStyle(color: Colors.grey.shade600),
+                            ),
+                            trailing: groupBalance == 0
+                                ? const Text('settled up')
+                                : Text(
+                                    isOwed 
+                                        ? 'you are owed\nPKR ${groupBalance.abs().toStringAsFixed(2)}'
+                                        : 'you owe\nPKR ${groupBalance.abs().toStringAsFixed(2)}',
+                                    textAlign: TextAlign.right,
+                                    style: TextStyle(
+                                      color: isOwed ? const Color(0xFF1CC29F) : Colors.orange,
+                                    ),
+                                  ),
+                            onTap: () {
+                              Navigator.of(context).push(
+                                MaterialPageRoute(
+                                  builder: (_) => GroupDetailPage(
+                                    groupId: group['id'],
+                                    userId: widget.userId,
                                   ),
                                 ),
-                          onTap: () {
-                            Navigator.of(context).push(
-                              MaterialPageRoute(
-                                builder: (_) => GroupDetailPage(
-                                  groupId: group['id'],
-                                  userId: widget.userId,
-                                ),
-                              ),
-                            );
-                          },
+                              );
+                            },
+                          ),
                         );
                       }).toList(),
                       
@@ -2032,6 +2201,38 @@ class _GroupDetailPageState extends State<GroupDetailPage> {
     _simplifiedDebtsFuture = DatabaseService().simplifyDebts(widget.groupId);
   }
 
+  Future<bool?> _deleteGroup() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete Group'),
+        content: const Text('Are you sure you want to delete this group? This will delete all associated expenses and cannot be undone.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            style: TextButton.styleFrom(
+              foregroundColor: Colors.red,
+            ),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      await DatabaseService().deleteGroup(widget.groupId);
+      if (mounted) {
+        Navigator.of(context).pop();
+      }
+      return true;
+    }
+    return false;
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -2049,11 +2250,24 @@ class _GroupDetailPageState extends State<GroupDetailPage> {
           },
         ),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.settings),
-            onPressed: () {
-              // Group settings
+          PopupMenuButton<String>(
+            onSelected: (value) async {
+              if (value == 'delete') {
+                await _deleteGroup();
+              }
             },
+            itemBuilder: (context) => [
+              const PopupMenuItem(
+                value: 'delete',
+                child: Row(
+                  children: [
+                    Icon(Icons.delete, color: Colors.red),
+                    SizedBox(width: 8),
+                    Text('Delete group', style: TextStyle(color: Colors.red)),
+                  ],
+                ),
+              ),
+            ],
           ),
         ],
       ),
@@ -2123,7 +2337,7 @@ class _GroupDetailPageState extends State<GroupDetailPage> {
                                             size: 64,
                                             color: Colors.grey,
                                           ),
-                      const SizedBox(height: 16),
+                                          const SizedBox(height: 16),
                                           const Text(
                                             'No expenses yet',
                                             style: TextStyle(
@@ -2161,6 +2375,7 @@ class _GroupDetailPageState extends State<GroupDetailPage> {
                                         return ExpenseListItem(
                                           expense: expense,
                                           userId: widget.userId,
+                                          onDelete: () => setState(() => _loadData()),
                                         );
                                       },
                                     ),
@@ -2272,11 +2487,11 @@ class _GroupDetailPageState extends State<GroupDetailPage> {
                     ),
                   );
                 },
-                );
-              },
-            );
-          },
-        ),
+              );
+            },
+          );
+        },
+      ),
       floatingActionButton: FloatingActionButton(
         onPressed: () {
           Navigator.of(context).push(
@@ -2299,12 +2514,45 @@ class _GroupDetailPageState extends State<GroupDetailPage> {
 class ExpenseListItem extends StatelessWidget {
   final Map<String, dynamic> expense;
   final String userId;
+  final Function()? onDelete;
 
   const ExpenseListItem({
     super.key,
     required this.expense,
     required this.userId,
+    this.onDelete,
   });
+
+  Future<bool?> _confirmDelete(BuildContext context) async {
+    return showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete Expense'),
+        content: const Text('Are you sure you want to delete this expense? This will update all balances and cannot be undone.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            style: TextButton.styleFrom(
+              foregroundColor: Colors.red,
+            ),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _handleDelete(BuildContext context) async {
+    final confirmed = await _confirmDelete(context);
+    if (confirmed == true) {
+      await DatabaseService().deleteExpense(expense['id']);
+      onDelete?.call();
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -2317,30 +2565,77 @@ class ExpenseListItem extends StatelessWidget {
       builder: (context, snapshot) {
         final payerName = snapshot.data?['name'] ?? 'Unknown';
         
-        return ListTile(
-          leading: Container(
-            width: 40,
-            height: 40,
-            decoration: BoxDecoration(
-              color: Colors.grey.shade200,
-              borderRadius: BorderRadius.circular(8),
+        return Dismissible(
+          key: Key(expense['id']),
+          direction: DismissDirection.endToStart,
+          background: Container(
+            alignment: Alignment.centerRight,
+            padding: const EdgeInsets.only(right: 20.0),
+            color: Colors.red,
+            child: const Icon(
+              Icons.delete,
+              color: Colors.white,
             ),
-            child: Icon(
-              _getCategoryIcon(expense['category']),
-              color: _getCategoryColor(expense['category']),
-            ),
           ),
-          title: Text(
-            expense['description'],
-            style: const TextStyle(fontWeight: FontWeight.bold),
-          ),
-          subtitle: Text(
-            '$formattedDate • ${isUserPayer ? 'You paid' : '$payerName paid'} PKR ${expense['amount'].toStringAsFixed(2)}',
-          ),
-          trailing: _buildTrailingWidget(),
-          onTap: () {
-            // Show expense details
+          confirmDismiss: (_) async {
+            final confirmed = await _confirmDelete(context);
+            if (confirmed == true) {
+              await DatabaseService().deleteExpense(expense['id']);
+              onDelete?.call();
+              return true;
+            }
+            return false;
           },
+          child: ListTile(
+            leading: Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                color: Colors.grey.shade200,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Icon(
+                _getCategoryIcon(expense['category']),
+                color: _getCategoryColor(expense['category']),
+              ),
+            ),
+            title: Text(
+              expense['description'],
+              style: const TextStyle(fontWeight: FontWeight.bold),
+            ),
+            subtitle: Text(
+              '$formattedDate • ${isUserPayer ? 'You paid' : '$payerName paid'} PKR ${expense['amount'].toStringAsFixed(2)}',
+            ),
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _buildTrailingWidget(),
+                PopupMenuButton<String>(
+                  icon: const Icon(Icons.more_vert),
+                  onSelected: (value) {
+                    if (value == 'delete') {
+                      _handleDelete(context);
+                    }
+                  },
+                  itemBuilder: (context) => [
+                    const PopupMenuItem(
+                      value: 'delete',
+                      child: Row(
+                        children: [
+                          Icon(Icons.delete, color: Colors.red),
+                          SizedBox(width: 8),
+                          Text('Delete expense', style: TextStyle(color: Colors.red)),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+            onTap: () {
+              // Show expense details
+            },
+          ),
         );
       },
     );
