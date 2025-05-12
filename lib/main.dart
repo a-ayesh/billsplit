@@ -2706,74 +2706,250 @@ class AddExpenseTab extends StatelessWidget {
 
   const AddExpenseTab({super.key, required this.userId});
 
-  @override
-  Widget build(BuildContext context) {
-    return FutureBuilder<List<Map<String, dynamic>>>(
-      future: DatabaseService().getGroupsByUserId(userId),
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(child: CircularProgressIndicator());
-        }
-
-        final groups = snapshot.data ?? [];
-        
-        if (groups.isEmpty) {
-          return Scaffold(
-            appBar: AppBar(
-              title: const Text('Add expenses'),
+  void _showExpenseTypeDialog(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Add an expense'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.person, color: Color(0xFF1CC29F)),
+              title: const Text('With a friend'),
+              subtitle: const Text('Split expenses with one person'),
+              onTap: () {
+                Navigator.pop(context);
+                _showFriendSelectionDialog(context);
+              },
             ),
-            body: Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
+            const Divider(),
+            ListTile(
+              leading: const Icon(Icons.group, color: Color(0xFF1CC29F)),
+              title: const Text('In a group'),
+              subtitle: const Text('Split expenses with multiple people'),
+              onTap: () {
+                Navigator.pop(context);
+                _showGroupSelectionDialog(context);
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showFriendSelectionDialog(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Select friend'),
+        content: FutureBuilder<List<Map<String, dynamic>>>(
+          future: DatabaseService().getFriends(userId),
+          builder: (context, snapshot) {
+            if (snapshot.connectionState == ConnectionState.waiting) {
+              return const Center(child: CircularProgressIndicator());
+            }
+
+            final friends = snapshot.data ?? [];
+            
+            if (friends.isEmpty) {
+              return const Column(
+                mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(
-                    Icons.group_outlined,
-                    size: 64,
-                    color: Colors.grey.shade400,
-                  ),
-                  const SizedBox(height: 16),
+                  Icon(Icons.person_outline, size: 48, color: Colors.grey),
+                  SizedBox(height: 16),
+                  Text('No friends yet'),
+                  SizedBox(height: 8),
                   Text(
-                    'No groups yet',
-                    style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.grey.shade600,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    'Create a group first to add expenses',
-                    style: TextStyle(
-                      color: Colors.grey.shade600,
-                    ),
+                    'Add friends first to split expenses',
+                    style: TextStyle(color: Colors.grey),
+                    textAlign: TextAlign.center,
                   ),
                 ],
+              );
+            }
+
+            return SizedBox(
+              width: double.maxFinite,
+              child: ListView.builder(
+                shrinkWrap: true,
+                itemCount: friends.length,
+                itemBuilder: (context, index) {
+                  final friend = friends[index];
+                  return ListTile(
+                    leading: CircleAvatar(
+                      backgroundColor: Colors.primaries[friend['name'].hashCode % Colors.primaries.length],
+                      child: Text(
+                        friend['name'].toString().substring(0, 1).toUpperCase(),
+                        style: const TextStyle(color: Colors.white),
+                      ),
+                    ),
+                    title: Text(friend['name'].toString()),
+                    subtitle: Text(friend['email'].toString()),
+                    onTap: () {
+                      Navigator.pop(context);
+                      // Create a temporary group for this friend
+                      final tempGroup = {
+                        'id': const Uuid().v4(),
+                        'name': 'Individual expense',
+                        'members': [
+                          {'id': userId, 'balance': 0.0},
+                          {'id': friend['id'].toString(), 'balance': 0.0},
+                        ],
+                      };
+                      Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => AddExpensePage(
+                            groupId: tempGroup['id'].toString(),
+                            userId: userId,
+                            isTemporaryGroup: true,
+                            tempGroup: tempGroup,
+                          ),
+                        ),
+                      );
+                    },
+                  );
+                },
+              ),
+            );
+          },
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showGroupSelectionDialog(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Select group'),
+        content: FutureBuilder<List<Map<String, dynamic>>>(
+          future: DatabaseService().getGroupsByUserId(userId),
+          builder: (context, snapshot) {
+            if (snapshot.connectionState == ConnectionState.waiting) {
+              return const Center(child: CircularProgressIndicator());
+            }
+
+            final groups = snapshot.data ?? [];
+            
+            if (groups.isEmpty) {
+              return Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.groups_outlined, size: 48, color: Colors.grey),
+                  const SizedBox(height: 16),
+                  const Text('No groups yet'),
+                  const SizedBox(height: 8),
+                  const Text(
+                    'Create a group first to split expenses',
+                    style: TextStyle(color: Colors.grey),
+                    textAlign: TextAlign.center,
+                  ),
+                ],
+              );
+            }
+
+            return SizedBox(
+              width: double.maxFinite,
+              child: ListView.builder(
+                shrinkWrap: true,
+                itemCount: groups.length,
+                itemBuilder: (context, index) {
+                  final group = groups[index];
+                  return ListTile(
+                    leading: Container(
+                      width: 40,
+                      height: 40,
+                      decoration: BoxDecoration(
+                        color: Colors.primaries[group['name'].toString().hashCode % Colors.primaries.length],
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Center(
+                        child: Text(
+                          group['name'].toString().substring(0, 1).toUpperCase(),
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                    ),
+                    title: Text(group['name'].toString()),
+                    subtitle: Text('${(group['members'] as List).length} members'),
+                    onTap: () {
+                      Navigator.pop(context);
+                      Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => AddExpensePage(
+                            groupId: group['id'].toString(),
+                            userId: userId,
+                          ),
+                        ),
+                      );
+                    },
+                  );
+                },
+              ),
+            );
+          },
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Add expenses'),
+      ),
+      body: Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              Icons.add_circle_outline,
+              size: 64,
+              color: Colors.grey.shade400,
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'Add a new expense',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+                color: Colors.grey.shade600,
               ),
             ),
-          );
-        }
-
-        // If there are groups, directly navigate to AddExpensePage
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          Navigator.of(context).push(
-            MaterialPageRoute(
-              builder: (_) => AddExpensePage(
-                groupId: groups.first['id'],
-                userId: userId,
+            const SizedBox(height: 8),
+            Text(
+              'Split expenses with friends or groups',
+              style: TextStyle(
+                color: Colors.grey.shade600,
               ),
             ),
-          );
-        });
-
-        return Scaffold(
-          appBar: AppBar(
-            title: const Text('Add expenses'),
-          ),
-          body: const Center(
-            child: CircularProgressIndicator(),
-          ),
-        );
-      },
+            const SizedBox(height: 32),
+            ElevatedButton.icon(
+              onPressed: () => _showExpenseTypeDialog(context),
+              icon: const Icon(Icons.add),
+              label: const Text('Add an expense'),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
@@ -2782,11 +2958,15 @@ class AddExpenseTab extends StatelessWidget {
 class AddExpensePage extends StatefulWidget {
   final String groupId;
   final String userId;
+  final bool isTemporaryGroup;
+  final Map<String, dynamic>? tempGroup;
 
   const AddExpensePage({
     super.key,
     required this.groupId,
     required this.userId,
+    this.isTemporaryGroup = false,
+    this.tempGroup,
   });
 
   @override
@@ -2811,10 +2991,9 @@ class _AddExpensePageState extends State<AddExpensePage> {
   }
 
   Future<void> _loadGroupMembers() async {
-    final group = await DatabaseService().getGroupById(widget.groupId);
-    if (group != null) {
+    if (widget.isTemporaryGroup && widget.tempGroup != null) {
       setState(() {
-        _members = List<Map<String, dynamic>>.from(group['members']);
+        _members = List<Map<String, dynamic>>.from(widget.tempGroup!['members']);
         
         // Initialize split amounts
         final equalAmount = 0.0; // Will be calculated when amount is entered
@@ -2822,6 +3001,19 @@ class _AddExpensePageState extends State<AddExpensePage> {
           _splitAmounts[member['id']] = equalAmount;
         }
       });
+    } else {
+      final group = await DatabaseService().getGroupById(widget.groupId);
+      if (group != null) {
+        setState(() {
+          _members = List<Map<String, dynamic>>.from(group['members']);
+          
+          // Initialize split amounts
+          final equalAmount = 0.0; // Will be calculated when amount is entered
+          for (var member in _members) {
+            _splitAmounts[member['id']] = equalAmount;
+          }
+        });
+      }
     }
   }
 
@@ -2886,6 +3078,7 @@ class _AddExpensePageState extends State<AddExpensePage> {
       'receiptUrl': null, // Would store image URL in a real app
       'notes': '',
       'createdAt': DateTime.now().toIso8601String(),
+      'isIndividualExpense': widget.isTemporaryGroup,
     };
     
     // Save to database
@@ -2904,33 +3097,36 @@ class _AddExpensePageState extends State<AddExpensePage> {
     
     await DatabaseService().addActivity(activity);
     
-    // Update group balances
-    final group = await DatabaseService().getGroupById(widget.groupId);
-    if (group != null) {
-      final members = List<Map<String, dynamic>>.from(group['members']);
-      
-      for (var i = 0; i < members.length; i++) {
-        final member = members[i];
-        final split = splitWith.firstWhere(
-          (s) => s['userId'] == member['id'],
-          orElse: () => {'amount': 0.0},
-        );
+    // Update balances
+    if (!widget.isTemporaryGroup) {
+      // Update group balances only for real groups
+      final group = await DatabaseService().getGroupById(widget.groupId);
+      if (group != null) {
+        final members = List<Map<String, dynamic>>.from(group['members']);
         
-        if (member['id'] == widget.userId) {
-          // Current user paid
-          member['balance'] = (member['balance'] ?? 0.0) + (amount - split['amount']);
-        } else {
-          // Other members
-          member['balance'] = (member['balance'] ?? 0.0) - split['amount'];
+        for (var i = 0; i < members.length; i++) {
+          final member = members[i];
+          final split = splitWith.firstWhere(
+            (s) => s['userId'] == member['id'],
+            orElse: () => {'amount': 0.0},
+          );
+          
+          if (member['id'] == widget.userId) {
+            // Current user paid
+            member['balance'] = (member['balance'] ?? 0.0) + (amount - split['amount']);
+          } else {
+            // Other members
+            member['balance'] = (member['balance'] ?? 0.0) - split['amount'];
+          }
         }
+        
+        final updatedGroup = {
+          ...group,
+          'members': members,
+        };
+        
+        await DatabaseService().updateGroup(updatedGroup);
       }
-      
-      final updatedGroup = {
-        ...group,
-        'members': members,
-      };
-      
-      await DatabaseService().updateGroup(updatedGroup);
     }
     
     if (mounted) {
