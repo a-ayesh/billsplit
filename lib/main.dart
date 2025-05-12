@@ -13,9 +13,33 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:logging/logging.dart';
 import 'package:fl_chart/fl_chart.dart';
 
+// Currency class and list
+class Currency {
+  final String code;
+  final String name;
+  final String symbol;
+
+  const Currency({
+    required this.code,
+    required this.name,
+    required this.symbol,
+  });
+}
+
+const List<Currency> currencies = [
+  Currency(code: 'PKR', name: 'Pakistani Rupee', symbol: 'Rs'),
+  Currency(code: 'USD', name: 'US Dollar', symbol: '\$'),
+  Currency(code: 'EUR', name: 'Euro', symbol: '€'),
+  Currency(code: 'GBP', name: 'British Pound', symbol: '£'),
+  Currency(code: 'INR', name: 'Indian Rupee', symbol: '₹'),
+  Currency(code: 'AUD', name: 'Australian Dollar', symbol: 'A\$'),
+  Currency(code: 'CAD', name: 'Canadian Dollar', symbol: 'C\$'),
+];
+
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await ThemeNotifier().loadThemeMode();
+  await CurrencyNotifier().loadCurrency();
   runApp(const SplitWiseApp());
 }
 
@@ -52,6 +76,47 @@ class ThemeNotifier extends ChangeNotifier {
       if (isDark != null) {
         _themeMode = isDark ? ThemeMode.dark : ThemeMode.light;
       }
+    }
+    notifyListeners();
+  }
+}
+
+// Currency Notifier
+class CurrencyNotifier extends ChangeNotifier {
+  static final CurrencyNotifier _instance = CurrencyNotifier._internal();
+  factory CurrencyNotifier() => _instance;
+  CurrencyNotifier._internal();
+
+  Currency _currency = currencies[0];
+  Currency get currency => _currency;
+
+  Future<void> setCurrency(Currency currency) async {
+    _currency = currency;
+    notifyListeners();
+
+    if (kIsWeb) {
+      html.window.localStorage['currency'] = currency.code;
+    } else {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('currency', currency.code);
+    }
+  }
+
+  Future<void> loadCurrency() async {
+    if (kIsWeb) {
+      final storage = html.window.localStorage;
+      final currencyCode = storage['currency'] ?? 'PKR';
+      _currency = currencies.firstWhere(
+        (c) => c.code == currencyCode,
+        orElse: () => currencies[0],
+      );
+    } else {
+      final prefs = await SharedPreferences.getInstance();
+      final currencyCode = prefs.getString('currency') ?? 'PKR';
+      _currency = currencies.firstWhere(
+        (c) => c.code == currencyCode,
+        orElse: () => currencies[0],
+      );
     }
     notifyListeners();
   }
@@ -1740,7 +1805,7 @@ class _FriendsTabState extends State<FriendsTab> {
                             ),
                           ),
                           Text(
-                            'PKR ${netBalance.abs().toStringAsFixed(2)}',
+                            formatCurrency(netBalance),
                             style: TextStyle(
                               fontSize: 20,
                               fontWeight: FontWeight.bold,
@@ -1815,8 +1880,8 @@ class _FriendsTabState extends State<FriendsTab> {
                                 ? const Text('settled up')
                                 : Text(
                                     isOwed 
-                                        ? 'owes you PKR ${amount.toStringAsFixed(2)}'
-                                        : 'you owe PKR ${amount.toStringAsFixed(2)}',
+                                        ? 'owes you ${formatCurrency(amount)}'
+                                        : 'you owe ${formatCurrency(amount)}',
                                     style: TextStyle(
                                       color: isOwed ? const Color(0xFF1CC29F) : Colors.orange,
                                       fontWeight: FontWeight.bold,
@@ -2147,7 +2212,7 @@ class _GroupsTabState extends State<GroupsTab> {
                             ),
                           ),
                           Text(
-                            'PKR ${netBalance.abs().toStringAsFixed(2)}',
+                            formatCurrency(netBalance),
                             style: TextStyle(
                               fontSize: 20,
                               fontWeight: FontWeight.bold,
@@ -2251,8 +2316,8 @@ class _GroupsTabState extends State<GroupsTab> {
                                 ? const Text('settled up')
                                 : Text(
                                     isOwed 
-                                        ? 'you are owed\nPKR ${groupBalance.abs().toStringAsFixed(2)}'
-                                        : 'you owe\nPKR ${groupBalance.abs().toStringAsFixed(2)}',
+                                        ? 'you are owed\n${formatCurrency(groupBalance)}'
+                                        : 'you owe\n${formatCurrency(groupBalance)}',
                                     textAlign: TextAlign.right,
                                     style: TextStyle(
                                       color: isOwed ? const Color(0xFF1CC29F) : Colors.orange,
@@ -2829,7 +2894,7 @@ class ExpenseListItem extends StatelessWidget {
       if (totalLent <= 0) return const Text('you paid');
       
       return Text(
-        'you lent\nPKR ${totalLent.toStringAsFixed(2)}',
+        'you lent\n${formatCurrency(totalLent)}',
         textAlign: TextAlign.right,
         style: const TextStyle(
           color: Color(0xFF1CC29F),
@@ -4333,6 +4398,45 @@ class _AccountTabState extends State<AccountTab> {
     _loadProfileImage();
   }
 
+  Future<void> _showCurrencyPicker() async {
+    final Currency? result = await showDialog<Currency>(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Text('Select Currency'),
+          content: ListenableBuilder(
+            listenable: CurrencyNotifier(),
+            builder: (context, _) {
+              return SizedBox(
+                width: double.maxFinite,
+                child: ListView.builder(
+                  shrinkWrap: true,
+                  itemCount: currencies.length,
+                  itemBuilder: (BuildContext context, int index) {
+                    final currency = currencies[index];
+                    return ListTile(
+                      leading: Text(currency.symbol),
+                      title: Text(currency.name),
+                      subtitle: Text(currency.code),
+                      selected: currency.code == CurrencyNotifier().currency.code,
+                      onTap: () {
+                        Navigator.of(context).pop(currency);
+                      },
+                    );
+                  },
+                ),
+              );
+            },
+          ),
+        );
+      },
+    );
+
+    if (result != null) {
+      await CurrencyNotifier().setCurrency(result);
+    }
+  }
+
   Future<void> _loadProfileImage() async {
     final image = await DatabaseService().getProfileImage(
       widget.user['id'],
@@ -4414,12 +4518,20 @@ class _AccountTabState extends State<AccountTab> {
                 title: const Text('Settings'),
                 children: [
                   // Currency
-                  ListTile(
-                    leading: const Icon(Icons.currency_exchange),
-                    title: const Text('Currency'),
-                    subtitle: const Text('PKR - Pakistani Rupee'),
-                    onTap: () {
-                      // Currency settings
+                  ListenableBuilder(
+                    listenable: CurrencyNotifier(),
+                    builder: (context, _) {
+                      final currency = CurrencyNotifier().currency;
+                      return ListTile(
+                        leading: const Icon(Icons.currency_exchange),
+                        title: const Text('Currency'),
+                        subtitle: Text('${currency.code} - ${currency.name}'),
+                        trailing: Text(
+                          currency.symbol,
+                          style: const TextStyle(fontSize: 18),
+                        ),
+                        onTap: _showCurrencyPicker,
+                      );
                     },
                   ),
                   // Theme
@@ -4832,4 +4944,10 @@ class _EditProfilePageState extends State<EditProfilePage> {
       ),
     );
   }
+}
+
+// Helper function to format currency
+String formatCurrency(double amount) {
+  final currency = CurrencyNotifier().currency;
+  return '${currency.symbol} ${amount.abs().toStringAsFixed(2)}';
 }
