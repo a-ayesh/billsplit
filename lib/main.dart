@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:image_picker/image_picker.dart';
@@ -633,6 +634,70 @@ class DatabaseService {
       // Remove the expense
       expenses.removeAt(expenseIndex);
       await _writeJsonFile(_expensesFileName, expenses);
+    }
+  }
+
+  Future<String?> saveProfileImage(String userId, dynamic imageFile) async {
+    try {
+      if (kIsWeb) {
+        // For web, convert image to base64 and store in shared location
+        final bytes = await imageFile.readAsBytes();
+        final base64Image = base64Encode(bytes);
+        final storage = html.window.localStorage;
+        final key = 'profile_images';
+        
+        // Get existing profile images map or create new one
+        Map<String, dynamic> profileImages = {};
+        if (storage.containsKey(key)) {
+          profileImages = Map<String, dynamic>.from(
+            jsonDecode(storage[key]!)
+          );
+        }
+        
+        // Add/update this user's profile image
+        profileImages[userId] = base64Image;
+        storage[key] = jsonEncode(profileImages);
+        
+        return userId; // Return userId as the key
+      } else {
+        // For mobile, save to app directory
+        final directory = await getApplicationDocumentsDirectory();
+        final fileName = 'profile_image_$userId.jpg';
+        final savedImage = await (imageFile as File).copy('${directory.path}/$fileName');
+        return savedImage.path;
+      }
+    } catch (e) {
+      _log.severe('Error saving profile image: $e');
+      return null;
+    }
+  }
+
+  Future<dynamic> getProfileImage(String userId, String? imagePath) async {
+    try {
+      if (kIsWeb) {
+        final storage = html.window.localStorage;
+        final key = 'profile_images';
+        
+        if (storage.containsKey(key)) {
+          final profileImages = Map<String, dynamic>.from(
+            jsonDecode(storage[key]!)
+          );
+          
+          if (profileImages.containsKey(userId)) {
+            return profileImages[userId];
+          }
+        }
+        return null;
+      } else if (imagePath != null) {
+        final file = File(imagePath);
+        if (await file.exists()) {
+          return file;
+        }
+      }
+      return null;
+    } catch (e) {
+      _log.severe('Error loading profile image: $e');
+      return null;
     }
   }
 }
@@ -1666,17 +1731,7 @@ class _FriendsTabState extends State<FriendsTab> {
                           ),
                           confirmDismiss: (_) => _removeFriend(friend),
                           child: ListTile(
-                            leading: CircleAvatar(
-                              backgroundColor: isOwed 
-                                  ? Colors.red.shade700 
-                                  : isSettled 
-                                      ? Colors.blue.shade700 
-                                      : Colors.green.shade700,
-                              child: Text(
-                                friend['name'].substring(0, 1).toUpperCase(),
-                                style: const TextStyle(color: Colors.white),
-                              ),
-                            ),
+                            leading: _buildFriendAvatar(friend),
                             title: Text(
                               friend['name'],
                               style: const TextStyle(
@@ -1708,6 +1763,51 @@ class _FriendsTabState extends State<FriendsTab> {
           },
         ),
       ),
+    );
+  }
+
+  Widget _buildFriendAvatar(Map<String, dynamic> friend) {
+    return FutureBuilder<dynamic>(
+      future: DatabaseService().getProfileImage(
+        friend['id'],
+        friend['profilePicture'],
+      ),
+      builder: (context, snapshot) {
+        if (snapshot.hasData && snapshot.data != null) {
+          if (kIsWeb) {
+            return CircleAvatar(
+              backgroundColor: Colors.grey.shade200,
+              child: ClipOval(
+                child: Image.memory(
+                  base64Decode(snapshot.data as String),
+                  width: 40,
+                  height: 40,
+                  fit: BoxFit.cover,
+                ),
+              ),
+            );
+          } else {
+            return CircleAvatar(
+              backgroundColor: Colors.grey.shade200,
+              child: ClipOval(
+                child: Image.file(
+                  snapshot.data as File,
+                  width: 40,
+                  height: 40,
+                  fit: BoxFit.cover,
+                ),
+              ),
+            );
+          }
+        }
+        return CircleAvatar(
+          backgroundColor: Colors.primaries[friend['name'].hashCode % Colors.primaries.length],
+          child: Text(
+            friend['name'].substring(0, 1).toUpperCase(),
+            style: const TextStyle(color: Colors.white),
+          ),
+        );
+      },
     );
   }
 }
@@ -4153,6 +4253,54 @@ class AccountTab extends StatefulWidget {
 
 class _AccountTabState extends State<AccountTab> {
   bool _notificationsEnabled = true;
+  dynamic _profileImage;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadProfileImage();
+  }
+
+  Future<void> _loadProfileImage() async {
+    final image = await DatabaseService().getProfileImage(
+      widget.user['id'],
+      widget.user['profilePicture'],
+    );
+    if (mounted) {
+      setState(() {
+        _profileImage = image;
+      });
+    }
+  }
+
+  Widget _buildProfileImage() {
+    if (_profileImage == null) {
+      return Text(
+        widget.user['name'].substring(0, 1).toUpperCase(),
+        style: const TextStyle(color: Colors.white),
+      );
+    }
+
+    if (kIsWeb) {
+      return ClipOval(
+        child: Image.memory(
+          base64Decode(_profileImage),
+          fit: BoxFit.cover,
+          width: 40,
+          height: 40,
+        ),
+      );
+    }
+
+    return ClipOval(
+      child: Image.file(
+        _profileImage,
+        fit: BoxFit.cover,
+        width: 40,
+        height: 40,
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -4166,10 +4314,7 @@ class _AccountTabState extends State<AccountTab> {
           ListTile(
             leading: CircleAvatar(
               backgroundColor: Colors.red.shade700,
-              child: Text(
-                widget.user['name'].substring(0, 1).toUpperCase(),
-                style: const TextStyle(color: Colors.white),
-              ),
+              child: _buildProfileImage(),
             ),
             title: Text(
               widget.user['name'],
@@ -4384,7 +4529,9 @@ class _EditProfilePageState extends State<EditProfilePage> {
   final _formKey = GlobalKey<FormState>();
   late TextEditingController _nameController;
   late TextEditingController _emailController;
-  File? _profileImage;
+  dynamic _newProfileImage;
+  Uint8List? _webImage;
+  dynamic _currentProfileImage;
   bool _isLoading = false;
 
   @override
@@ -4392,17 +4539,77 @@ class _EditProfilePageState extends State<EditProfilePage> {
     super.initState();
     _nameController = TextEditingController(text: widget.user['name']);
     _emailController = TextEditingController(text: widget.user['email']);
+    _loadCurrentProfileImage();
+  }
+
+  Future<void> _loadCurrentProfileImage() async {
+    final image = await DatabaseService().getProfileImage(
+      widget.user['id'],
+      widget.user['profilePicture'],
+    );
+    if (mounted) {
+      setState(() {
+        _currentProfileImage = image;
+      });
+    }
   }
 
   Future<void> _pickImage() async {
-    final picker = ImagePicker();
-    final pickedFile = await picker.pickImage(source: ImageSource.gallery);
-    
-    if (pickedFile != null) {
-      setState(() {
-        _profileImage = File(pickedFile.path);
-      });
+    try {
+      final picker = ImagePicker();
+      final pickedFile = await picker.pickImage(
+        source: ImageSource.gallery,
+        maxWidth: 800,
+        maxHeight: 800,
+        imageQuality: 85,
+      );
+      
+      if (pickedFile != null) {
+        if (kIsWeb) {
+          // Handle web platform
+          final bytes = await pickedFile.readAsBytes();
+          setState(() {
+            _webImage = bytes;
+            _newProfileImage = pickedFile;
+          });
+        } else {
+          // Handle mobile platform
+          setState(() {
+            _newProfileImage = File(pickedFile.path);
+          });
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Failed to pick image')),
+        );
+      }
     }
+  }
+
+  Widget _buildProfileImage() {
+    if (_webImage != null) {
+      return Image.memory(_webImage!, fit: BoxFit.cover);
+    }
+
+    if (_newProfileImage != null && !kIsWeb) {
+      return Image.file(_newProfileImage!, fit: BoxFit.cover);
+    }
+
+    if (_currentProfileImage != null) {
+      if (kIsWeb && _currentProfileImage is String) {
+        return Image.memory(base64Decode(_currentProfileImage), fit: BoxFit.cover);
+      }
+      if (!kIsWeb && _currentProfileImage is File) {
+        return Image.file(_currentProfileImage, fit: BoxFit.cover);
+      }
+    }
+
+    return Text(
+      widget.user['name'].substring(0, 1).toUpperCase(),
+      style: const TextStyle(fontSize: 40, color: Colors.white),
+    );
   }
 
   Future<void> _saveProfile() async {
@@ -4413,12 +4620,20 @@ class _EditProfilePageState extends State<EditProfilePage> {
     });
     
     try {
+      String? profilePicturePath = widget.user['profilePicture'];
+      
+      if (_newProfileImage != null) {
+        profilePicturePath = await DatabaseService().saveProfileImage(
+          widget.user['id'],
+          _newProfileImage!,
+        );
+      }
+      
       final updatedUser = {
         ...widget.user,
         'name': _nameController.text.trim(),
         'email': _emailController.text.trim(),
-        // In a real app, you would upload the image and store the URL
-        'profilePicture': _profileImage != null ? 'profile_image_url' : widget.user['profilePicture'],
+        'profilePicture': profilePicturePath,
       };
       
       final success = await AuthService().updateProfile(updatedUser);
@@ -4435,7 +4650,7 @@ class _EditProfilePageState extends State<EditProfilePage> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('An error occurred')),
+          const SnackBar(content: Text('An error occurred while saving profile')),
         );
       }
     } finally {
@@ -4471,18 +4686,13 @@ class _EditProfilePageState extends State<EditProfilePage> {
                   CircleAvatar(
                     radius: 60,
                     backgroundColor: Colors.red.shade700,
-                    backgroundImage: _profileImage != null
-                        ? FileImage(_profileImage!)
-                        : null,
-                    child: _profileImage == null
-                        ? Text(
-                            widget.user['name'].substring(0, 1).toUpperCase(),
-                            style: const TextStyle(
-                              fontSize: 40,
-                              color: Colors.white,
-                            ),
-                          )
-                        : null,
+                    child: ClipOval(
+                      child: SizedBox(
+                        width: 120,
+                        height: 120,
+                        child: _buildProfileImage(),
+                      ),
+                    ),
                   ),
                   Positioned(
                     bottom: 0,
@@ -4550,4 +4760,4 @@ class _EditProfilePageState extends State<EditProfilePage> {
       ),
     );
   }
-  }
+}
