@@ -1601,6 +1601,7 @@ class GroupsTab extends StatefulWidget {
 class _GroupsTabState extends State<GroupsTab> {
   late Future<List<Map<String, dynamic>>> _groupsFuture;
   late Future<Map<String, dynamic>> _balancesFuture;
+  late Future<List<Map<String, dynamic>>> _friendsFuture;
 
   @override
   void initState() {
@@ -1611,6 +1612,130 @@ class _GroupsTabState extends State<GroupsTab> {
   Future<void> _loadData() async {
     _groupsFuture = DatabaseService().getGroupsByUserId(widget.userId);
     _balancesFuture = DatabaseService().calculateBalances(widget.userId);
+    _friendsFuture = DatabaseService().getFriends(widget.userId);
+  }
+
+  void _showCreateGroupDialog() async {
+    final nameController = TextEditingController();
+    final friends = await DatabaseService().getFriends(widget.userId);
+    
+    if (friends.isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Add some friends first before creating a group'),
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
+      return;
+    }
+    
+    final selectedFriends = <String>{};
+    
+    if (mounted) {
+      showDialog(
+        context: context,
+        builder: (context) => StatefulBuilder(
+          builder: (context, setState) => AlertDialog(
+            title: const Text('Create a new group'),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  TextField(
+                    controller: nameController,
+                    decoration: const InputDecoration(
+                      labelText: 'Group name',
+                      hintText: 'e.g., Trip to Murree',
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  const Text(
+                    'Select friends to add:',
+                    style: TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 8),
+                  ...friends.map((friend) => CheckboxListTile(
+                    title: Text(friend['name']),
+                    subtitle: Text(friend['email']),
+                    value: selectedFriends.contains(friend['id']),
+                    onChanged: (bool? value) {
+                      setState(() {
+                        if (value == true) {
+                          selectedFriends.add(friend['id']);
+                        } else {
+                          selectedFriends.remove(friend['id']);
+                        }
+                      });
+                    },
+                  )).toList(),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text('Cancel'),
+              ),
+              ElevatedButton(
+                onPressed: () async {
+                  final name = nameController.text.trim();
+                  if (name.isEmpty) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Please enter a group name')),
+                    );
+                    return;
+                  }
+                  
+                  if (selectedFriends.isEmpty) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Please select at least one friend')),
+                    );
+                    return;
+                  }
+                  
+                  // Create list of all members including current user
+                  final members = [
+                    {
+                      'id': widget.userId,
+                      'balance': 0.0,
+                      'role': 'admin',
+                    },
+                    ...selectedFriends.map((friendId) => {
+                      'id': friendId,
+                      'balance': 0.0,
+                      'role': 'member',
+                    }),
+                  ];
+                  
+                  final newGroup = {
+                    'id': const Uuid().v4(),
+                    'name': name,
+                    'icon': null,
+                    'createdAt': DateTime.now().toIso8601String(),
+                    'createdBy': widget.userId,
+                    'members': members,
+                    'isSettled': false,
+                  };
+                  
+                  await DatabaseService().addGroup(newGroup);
+                  
+                  if (mounted) {
+                    Navigator.of(context).pop();
+                    setState(() {
+                      _loadData();
+                    });
+                  }
+                },
+                child: const Text('Create'),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
   }
 
   @override
@@ -1692,102 +1817,170 @@ class _GroupsTabState extends State<GroupsTab> {
                               fontWeight: FontWeight.bold,
                             ),
                           ),
-                          Row(
-                            children: [
-                              Text(
-                                'PKR ${netBalance.abs().toStringAsFixed(2)}',
-                                style: TextStyle(
-                                  fontSize: 20,
-                                  fontWeight: FontWeight.bold,
-                                  color: netBalance >= 0 ? const Color(0xFF1CC29F) : Colors.orange,
-                                ),
-                              ),
-                              const SizedBox(width: 8),
-                              const Icon(Icons.tune),
-                            ],
+                          Text(
+                            'PKR ${netBalance.abs().toStringAsFixed(2)}',
+                            style: TextStyle(
+                              fontSize: 20,
+                              fontWeight: FontWeight.bold,
+                              color: netBalance >= 0 ? const Color(0xFF1CC29F) : Colors.orange,
+                            ),
                           ),
                         ],
                       ),
                     ),
                     const Divider(),
-                    // Active groups
-                    ...activeGroups.map((group) {
-                      final groupBalance = _calculateGroupBalance(group, widget.userId);
-                      final isOwed = groupBalance > 0;
-                      
-                      return ListTile(
-                        leading: group['icon'] != null
-                            ? Image.asset(group['icon'], width: 40, height: 40)
-                            : Container(
-                                width: 40,
-                                height: 40,
-                                decoration: BoxDecoration(
-                                  color: Colors.primaries[
-                                    group['name'].hashCode % Colors.primaries.length
-                                  ],
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                                child: Center(
-                                  child: Text(
-                                    group['name'].substring(0, 1).toUpperCase(),
-                                    style: const TextStyle(
-                                      color: Colors.white,
-                                      fontWeight: FontWeight.bold,
-                                      fontSize: 18,
+                    
+                    if (groups.isEmpty)
+                      Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            const SizedBox(height: 32),
+                            Icon(
+                              Icons.group_outlined,
+                              size: 64,
+                              color: Colors.grey.shade400,
+                            ),
+                            const SizedBox(height: 16),
+                            Text(
+                              'No groups yet',
+                              style: TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.grey.shade600,
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              'Create a group with your friends to get started',
+                              style: TextStyle(
+                                color: Colors.grey.shade600,
+                              ),
+                            ),
+                            const SizedBox(height: 16),
+                            ElevatedButton.icon(
+                              onPressed: _showCreateGroupDialog,
+                              icon: const Icon(Icons.add),
+                              label: const Text('Create a group'),
+                            ),
+                          ],
+                        ),
+                      )
+                    else ...[
+                      // Active groups
+                      ...activeGroups.map((group) {
+                        final groupBalance = _calculateGroupBalance(group, widget.userId);
+                        final isOwed = groupBalance > 0;
+                        
+                        return ListTile(
+                          leading: group['icon'] != null
+                              ? Image.asset(group['icon'], width: 40, height: 40)
+                              : Container(
+                                  width: 40,
+                                  height: 40,
+                                  decoration: BoxDecoration(
+                                    color: Colors.primaries[
+                                      group['name'].hashCode % Colors.primaries.length
+                                    ],
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  child: Center(
+                                    child: Text(
+                                      group['name'].substring(0, 1).toUpperCase(),
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 18,
+                                      ),
                                     ),
                                   ),
                                 ),
-                              ),
-                        title: Text(
-                          group['name'],
-                          style: const TextStyle(
-                            fontWeight: FontWeight.bold,
+                          title: Text(
+                            group['name'],
+                            style: const TextStyle(
+                              fontWeight: FontWeight.bold,
+                            ),
                           ),
-                        ),
-                        trailing: groupBalance == 0
-                            ? const Text('settled up')
-                            : Text(
-                                isOwed 
-                                    ? 'you are owed\nPKR ${groupBalance.abs().toStringAsFixed(2)}'
-                                    : 'you owe\nPKR ${groupBalance.abs().toStringAsFixed(2)}',
-                                textAlign: TextAlign.right,
-                                style: TextStyle(
-                                  color: isOwed ? const Color(0xFF1CC29F) : Colors.orange,
+                          subtitle: Text(
+                            '${(group['members'] as List).length} members',
+                            style: TextStyle(color: Colors.grey.shade600),
+                          ),
+                          trailing: groupBalance == 0
+                              ? const Text('settled up')
+                              : Text(
+                                  isOwed 
+                                      ? 'you are owed\nPKR ${groupBalance.abs().toStringAsFixed(2)}'
+                                      : 'you owe\nPKR ${groupBalance.abs().toStringAsFixed(2)}',
+                                  textAlign: TextAlign.right,
+                                  style: TextStyle(
+                                    color: isOwed ? const Color(0xFF1CC29F) : Colors.orange,
+                                  ),
+                                ),
+                          onTap: () {
+                            Navigator.of(context).push(
+                              MaterialPageRoute(
+                                builder: (_) => GroupDetailPage(
+                                  groupId: group['id'],
+                                  userId: widget.userId,
                                 ),
                               ),
-                        onTap: () {
-                          Navigator.of(context).push(
-                            MaterialPageRoute(
-                              builder: (_) => GroupDetailPage(
-                                groupId: group['id'],
-                                userId: widget.userId,
+                            );
+                          },
+                        );
+                      }).toList(),
+                      
+                      if (settledGroups.isNotEmpty) ...[
+                        const SizedBox(height: 16),
+                        Text(
+                          'Settled groups',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.grey.shade600,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        ...settledGroups.map((group) => ListTile(
+                          leading: Container(
+                            width: 40,
+                            height: 40,
+                            decoration: BoxDecoration(
+                              color: Colors.grey.shade200,
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Center(
+                              child: Text(
+                                group['name'].substring(0, 1).toUpperCase(),
+                                style: TextStyle(
+                                  color: Colors.grey.shade600,
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 18,
+                                ),
                               ),
                             ),
-                          );
-                        },
-                      );
-                    }).toList(),
-                    
-                    if (settledGroups.isNotEmpty) ...[
-                      const SizedBox(height: 16),
-                      Text(
-                        'Hiding groups you settled up with over 7 days ago',
-                        style: TextStyle(
-                          color: Colors.grey[600],
-                          fontSize: 14,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      OutlinedButton(
-                        onPressed: () {
-                          // Show settled groups
-                        },
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: const Color(0xFF1CC29F),
-                          side: const BorderSide(color: Color(0xFF1CC29F)),
-                        ),
-                        child: Text('Show ${settledGroups.length} settled-up groups'),
-                      ),
+                          ),
+                          title: Text(
+                            group['name'],
+                            style: TextStyle(
+                              color: Colors.grey.shade600,
+                            ),
+                          ),
+                          subtitle: Text(
+                            '${(group['members'] as List).length} members • Settled',
+                            style: TextStyle(color: Colors.grey.shade500),
+                          ),
+                          onTap: () {
+                            Navigator.of(context).push(
+                              MaterialPageRoute(
+                                builder: (_) => GroupDetailPage(
+                                  groupId: group['id'],
+                                  userId: widget.userId,
+                                ),
+                              ),
+                            );
+                          },
+                        )).toList(),
+                      ],
                     ],
                   ],
                 );
@@ -1800,67 +1993,9 @@ class _GroupsTabState extends State<GroupsTab> {
   }
 
   double _calculateGroupBalance(Map<String, dynamic> group, String userId) {
-    // This is a simplified calculation
-    // In a real app, you would calculate this from expenses
     final members = List<Map<String, dynamic>>.from(group['members']);
     final userMember = members.firstWhere((m) => m['id'] == userId, orElse: () => {'balance': 0.0});
     return userMember['balance'] ?? 0.0;
-  }
-
-  void _showCreateGroupDialog() {
-    final nameController = TextEditingController();
-    
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Create a new group'),
-        content: TextField(
-          controller: nameController,
-          decoration: const InputDecoration(
-            labelText: 'Group name',
-            hintText: 'e.g., Trip to Murree',
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton(
-            onPressed: () async {
-              final name = nameController.text.trim();
-              if (name.isEmpty) return;
-              
-              final newGroup = {
-                'id': const Uuid().v4(),
-                'name': name,
-                'icon': null,
-                'createdAt': DateTime.now().toIso8601String(),
-                'createdBy': widget.userId,
-                'members': [
-                  {
-                    'id': widget.userId,
-                    'balance': 0.0,
-                    'role': 'admin',
-                  }
-                ],
-                'isSettled': false,
-              };
-              
-              await DatabaseService().addGroup(newGroup);
-              
-              if (mounted) {
-                Navigator.of(context).pop();
-                setState(() {
-                  _loadData();
-                });
-              }
-            },
-            child: const Text('Create'),
-          ),
-        ],
-      ),
-    );
   }
 }
 
