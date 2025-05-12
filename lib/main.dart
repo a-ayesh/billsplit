@@ -14,23 +14,46 @@ import 'package:logging/logging.dart';
 import 'package:fl_chart/fl_chart.dart';
 
 void main() async {
-  Logger.root.level = Level.ALL;
-  Logger.root.onRecord.listen((record) {
-    // ignore: avoid_print
-    print('${record.level.name}: ${record.time}: ${record.message}');
-  });
-  
-  final log = Logger('Main');
-  try {
-    log.info('Starting app...');
-    WidgetsFlutterBinding.ensureInitialized();
-    log.info('Flutter bindings initialized');
-    
-    runApp(const SplitWiseApp());
-    log.info('App started');
-  } catch (e) {
-    log.severe('Error starting app: $e');
-    rethrow;
+  WidgetsFlutterBinding.ensureInitialized();
+  await ThemeNotifier().loadThemeMode();
+  runApp(const SplitWiseApp());
+}
+
+// Theme Notifier
+class ThemeNotifier extends ChangeNotifier {
+  static final ThemeNotifier _instance = ThemeNotifier._internal();
+  factory ThemeNotifier() => _instance;
+  ThemeNotifier._internal();
+
+  ThemeMode _themeMode = ThemeMode.system;
+  ThemeMode get themeMode => _themeMode;
+
+  Future<void> setThemeMode(ThemeMode mode) async {
+    _themeMode = mode;
+    notifyListeners();
+
+    if (kIsWeb) {
+      html.window.localStorage['themeMode'] = mode == ThemeMode.dark ? 'dark' : 'light';
+    } else {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool('isDarkMode', mode == ThemeMode.dark);
+    }
+  }
+
+  Future<void> loadThemeMode() async {
+    if (kIsWeb) {
+      final storage = html.window.localStorage;
+      if (storage.containsKey('themeMode')) {
+        _themeMode = storage['themeMode'] == 'dark' ? ThemeMode.dark : ThemeMode.light;
+      }
+    } else {
+      final prefs = await SharedPreferences.getInstance();
+      final isDark = prefs.getBool('isDarkMode');
+      if (isDark != null) {
+        _themeMode = isDark ? ThemeMode.dark : ThemeMode.light;
+      }
+    }
+    notifyListeners();
   }
 }
 
@@ -39,49 +62,98 @@ class SplitWiseApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'Splitwise',
-      debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        primaryColor: const Color(0xFF1CC29F),
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xFF1CC29F),
-          primary: const Color(0xFF1CC29F),
-          secondary: const Color(0xFF8A2BE2),
-          background: Colors.white,
-        ),
-        fontFamily: 'Roboto',
-        appBarTheme: const AppBarTheme(
-          backgroundColor: Colors.white,
-          foregroundColor: Colors.black,
-          elevation: 0,
-        ),
-        elevatedButtonTheme: ElevatedButtonThemeData(
-          style: ElevatedButton.styleFrom(
-            backgroundColor: const Color(0xFF1CC29F),
-            foregroundColor: Colors.white,
-            minimumSize: const Size(double.infinity, 50),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(8),
+    return ListenableBuilder(
+      listenable: ThemeNotifier(),
+      builder: (context, child) {
+        return MaterialApp(
+          title: 'Splitwise',
+          debugShowCheckedModeBanner: false,
+          theme: ThemeData(
+            primaryColor: const Color(0xFF1CC29F),
+            colorScheme: ColorScheme.fromSeed(
+              seedColor: const Color(0xFF1CC29F),
+              primary: const Color(0xFF1CC29F),
+              secondary: const Color(0xFF8A2BE2),
+              background: Colors.white,
+            ),
+            fontFamily: 'Roboto',
+            appBarTheme: const AppBarTheme(
+              backgroundColor: Colors.white,
+              foregroundColor: Colors.black,
+              elevation: 0,
+            ),
+            elevatedButtonTheme: ElevatedButtonThemeData(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF1CC29F),
+                foregroundColor: Colors.white,
+                minimumSize: const Size(double.infinity, 50),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+              ),
+            ),
+            textButtonTheme: TextButtonThemeData(
+              style: TextButton.styleFrom(
+                foregroundColor: const Color(0xFF1CC29F),
+              ),
+            ),
+            inputDecorationTheme: InputDecorationTheme(
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(8),
+                borderSide: const BorderSide(color: Color(0xFF1CC29F), width: 2),
+              ),
             ),
           ),
-        ),
-        textButtonTheme: TextButtonThemeData(
-          style: TextButton.styleFrom(
-            foregroundColor: const Color(0xFF1CC29F),
+          darkTheme: ThemeData(
+            primaryColor: const Color(0xFF1CC29F),
+            colorScheme: ColorScheme.fromSeed(
+              brightness: Brightness.dark,
+              seedColor: const Color(0xFF1CC29F),
+              primary: const Color(0xFF1CC29F),
+              secondary: const Color(0xFF8A2BE2),
+              background: const Color(0xFF121212),
+            ),
+            fontFamily: 'Roboto',
+            scaffoldBackgroundColor: const Color(0xFF121212),
+            appBarTheme: const AppBarTheme(
+              backgroundColor: Color(0xFF1E1E1E),
+              foregroundColor: Colors.white,
+              elevation: 0,
+            ),
+            elevatedButtonTheme: ElevatedButtonThemeData(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF1CC29F),
+                foregroundColor: Colors.white,
+                minimumSize: const Size(double.infinity, 50),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+              ),
+            ),
+            textButtonTheme: TextButtonThemeData(
+              style: TextButton.styleFrom(
+                foregroundColor: const Color(0xFF1CC29F),
+              ),
+            ),
+            inputDecorationTheme: InputDecorationTheme(
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(8),
+                borderSide: const BorderSide(color: Color(0xFF1CC29F), width: 2),
+              ),
+            ),
+            cardColor: const Color(0xFF1E1E1E),
+            dividerColor: Colors.white24,
           ),
-        ),
-        inputDecorationTheme: InputDecorationTheme(
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(8),
-          ),
-          focusedBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(8),
-            borderSide: const BorderSide(color: Color(0xFF1CC29F), width: 2),
-          ),
-        ),
-      ),
-      home: const SplashScreen(),
+          themeMode: ThemeNotifier().themeMode,
+          home: const SplashScreen(),
+        );
+      },
     );
   }
 }
@@ -4308,208 +4380,208 @@ class _AccountTabState extends State<AccountTab> {
       appBar: AppBar(
         title: const Text('Account'),
       ),
-      body: ListView(
-        children: [
-          // Profile Section
-          ListTile(
-            leading: CircleAvatar(
-              backgroundColor: Colors.red.shade700,
-              child: _buildProfileImage(),
-            ),
-            title: Text(
-              widget.user['name'],
-              style: const TextStyle(fontWeight: FontWeight.bold),
-            ),
-            subtitle: Text(widget.user['email']),
-            trailing: const Icon(Icons.camera_alt),
-            onTap: () {
-              Navigator.of(context).push(
-                MaterialPageRoute(
-                  builder: (_) => EditProfilePage(user: widget.user),
+      body: ListenableBuilder(
+        listenable: ThemeNotifier(),
+        builder: (context, child) {
+          final isDark = ThemeNotifier().themeMode == ThemeMode.dark;
+          return ListView(
+            children: [
+              // Profile Section
+              ListTile(
+                leading: CircleAvatar(
+                  backgroundColor: Colors.red.shade700,
+                  child: _buildProfileImage(),
                 ),
-              );
-            },
-          ),
-          const Divider(),
-
-          // Settings Section
-          ExpansionTile(
-            leading: const Icon(Icons.settings),
-            title: const Text('Settings'),
-            children: [
-              // Currency
-              ListTile(
-                leading: const Icon(Icons.currency_exchange),
-                title: const Text('Currency'),
-                subtitle: const Text('PKR - Pakistani Rupee'),
+                title: Text(
+                  widget.user['name'],
+                  style: const TextStyle(fontWeight: FontWeight.bold),
+                ),
+                subtitle: Text(widget.user['email']),
+                trailing: const Icon(Icons.camera_alt),
                 onTap: () {
-                  // Currency settings
-                },
-              ),
-              // Language
-              ListTile(
-                leading: const Icon(Icons.language),
-                title: const Text('Language'),
-                subtitle: const Text('English'),
-                onTap: () {
-                  // Language settings
-                },
-              ),
-              // Theme
-              ListTile(
-                leading: const Icon(Icons.palette),
-                title: const Text('Theme'),
-                subtitle: const Text('Light'),
-                onTap: () {
-                  // Theme settings
-                },
-              ),
-            ],
-          ),
-
-          // Preferences Section
-          ExpansionTile(
-            leading: const Icon(Icons.tune),
-            title: const Text('Preferences'),
-            children: [
-              // Notifications
-              SwitchListTile(
-                secondary: const Icon(Icons.notifications),
-                title: const Text('Notifications'),
-                subtitle: const Text('Enable push notifications'),
-                value: _notificationsEnabled,
-                onChanged: (bool value) {
-                  setState(() {
-                    _notificationsEnabled = value;
-                  });
-                },
-              ),
-              // Default Split
-              ListTile(
-                leading: const Icon(Icons.people),
-                title: const Text('Default Split'),
-                subtitle: const Text('Equal split'),
-                onTap: () {
-                  // Default split settings
-                },
-              ),
-              // Categories
-              ListTile(
-                leading: const Icon(Icons.category),
-                title: const Text('Categories'),
-                subtitle: const Text('Manage expense categories'),
-                onTap: () {
-                  // Categories settings
-                },
-              ),
-            ],
-          ),
-
-          // Security Section
-          ExpansionTile(
-            leading: const Icon(Icons.security),
-            title: const Text('Security'),
-            children: [
-              // Change Password
-              ListTile(
-                leading: const Icon(Icons.lock),
-                title: const Text('Change Password'),
-                onTap: () {
-                  // Change password
-                },
-              ),
-              // Reset Password
-              ListTile(
-                leading: const Icon(Icons.restore),
-                title: const Text('Reset Password'),
-                onTap: () {
-                  // Reset password
-                },
-              ),
-              // Privacy Settings
-              ListTile(
-                leading: const Icon(Icons.privacy_tip),
-                title: const Text('Privacy Settings'),
-                onTap: () {
-                  // Privacy settings
-                },
-              ),
-              // Login Activity
-              ListTile(
-                leading: const Icon(Icons.history),
-                title: const Text('Login Activity'),
-                onTap: () {
-                  // Login activity
-                },
-              ),
-            ],
-          ),
-
-          // Help & Support Section
-          ExpansionTile(
-            leading: const Icon(Icons.help),
-            title: const Text('Help & Support'),
-            children: [
-              // Contact Us
-              ListTile(
-                leading: const Icon(Icons.email),
-                title: const Text('Contact Us'),
-                subtitle: const Text('ask@billsplitter.com'),
-                onTap: () {
-                  // Launch email client
-                },
-              ),
-              // FAQs
-              ListTile(
-                leading: const Icon(Icons.question_answer),
-                title: const Text('FAQs'),
-                onTap: () {
-                  // Show FAQs
-                },
-              ),
-              // Terms & Conditions
-              ListTile(
-                leading: const Icon(Icons.description),
-                title: const Text('Terms & Conditions'),
-                onTap: () {
-                  // Show terms
-                },
-              ),
-              // Privacy Policy
-              ListTile(
-                leading: const Icon(Icons.policy),
-                title: const Text('Privacy Policy'),
-                onTap: () {
-                  // Show privacy policy
-                },
-              ),
-            ],
-          ),
-
-          const SizedBox(height: 16),
-          
-          // Log Out Button
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16.0),
-            child: ElevatedButton(
-              onPressed: () async {
-                await AuthService().logout();
-                if (context.mounted) {
-                  Navigator.of(context).pushAndRemoveUntil(
-                    MaterialPageRoute(builder: (_) => const WelcomePage()),
-                    (route) => false,
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => EditProfilePage(user: widget.user),
+                    ),
                   );
-                }
-              },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.red,
-                padding: const EdgeInsets.symmetric(vertical: 16),
+                },
               ),
-              child: const Text('Log out'),
-            ),
-          ),
-          const SizedBox(height: 32),
-        ],
+              const Divider(),
+
+              // Settings Section
+              ExpansionTile(
+                leading: const Icon(Icons.settings),
+                title: const Text('Settings'),
+                children: [
+                  // Currency
+                  ListTile(
+                    leading: const Icon(Icons.currency_exchange),
+                    title: const Text('Currency'),
+                    subtitle: const Text('PKR - Pakistani Rupee'),
+                    onTap: () {
+                      // Currency settings
+                    },
+                  ),
+                  // Theme
+                  SwitchListTile(
+                    secondary: const Icon(Icons.dark_mode),
+                    title: const Text('Dark Mode'),
+                    subtitle: Text(isDark ? 'Dark theme enabled' : 'Light theme enabled'),
+                    value: isDark,
+                    onChanged: (value) {
+                      ThemeNotifier().setThemeMode(
+                        value ? ThemeMode.dark : ThemeMode.light,
+                      );
+                    },
+                  ),
+                ],
+              ),
+
+              // Preferences Section
+              ExpansionTile(
+                leading: const Icon(Icons.tune),
+                title: const Text('Preferences'),
+                children: [
+                  // Notifications
+                  SwitchListTile(
+                    secondary: const Icon(Icons.notifications),
+                    title: const Text('Notifications'),
+                    subtitle: const Text('Enable push notifications'),
+                    value: _notificationsEnabled,
+                    onChanged: (bool value) {
+                      setState(() {
+                        _notificationsEnabled = value;
+                      });
+                    },
+                  ),
+                  // Default Split
+                  ListTile(
+                    leading: const Icon(Icons.people),
+                    title: const Text('Default Split'),
+                    subtitle: const Text('Equal split'),
+                    onTap: () {
+                      // Default split settings
+                    },
+                  ),
+                  // Categories
+                  ListTile(
+                    leading: const Icon(Icons.category),
+                    title: const Text('Categories'),
+                    subtitle: const Text('Manage expense categories'),
+                    onTap: () {
+                      // Categories settings
+                    },
+                  ),
+                ],
+              ),
+
+              // Security Section
+              ExpansionTile(
+                leading: const Icon(Icons.security),
+                title: const Text('Security'),
+                children: [
+                  // Change Password
+                  ListTile(
+                    leading: const Icon(Icons.lock),
+                    title: const Text('Change Password'),
+                    onTap: () {
+                      // Change password
+                    },
+                  ),
+                  // Reset Password
+                  ListTile(
+                    leading: const Icon(Icons.restore),
+                    title: const Text('Reset Password'),
+                    onTap: () {
+                      // Reset password
+                    },
+                  ),
+                  // Privacy Settings
+                  ListTile(
+                    leading: const Icon(Icons.privacy_tip),
+                    title: const Text('Privacy Settings'),
+                    onTap: () {
+                      // Privacy settings
+                    },
+                  ),
+                  // Login Activity
+                  ListTile(
+                    leading: const Icon(Icons.history),
+                    title: const Text('Login Activity'),
+                    onTap: () {
+                      // Login activity
+                    },
+                  ),
+                ],
+              ),
+
+              // Help & Support Section
+              ExpansionTile(
+                leading: const Icon(Icons.help),
+                title: const Text('Help & Support'),
+                children: [
+                  // Contact Us
+                  ListTile(
+                    leading: const Icon(Icons.email),
+                    title: const Text('Contact Us'),
+                    subtitle: const Text('ask@billsplitter.com'),
+                    onTap: () {
+                      // Launch email client
+                    },
+                  ),
+                  // FAQs
+                  ListTile(
+                    leading: const Icon(Icons.question_answer),
+                    title: const Text('FAQs'),
+                    onTap: () {
+                      // Show FAQs
+                    },
+                  ),
+                  // Terms & Conditions
+                  ListTile(
+                    leading: const Icon(Icons.description),
+                    title: const Text('Terms & Conditions'),
+                    onTap: () {
+                      // Show terms
+                    },
+                  ),
+                  // Privacy Policy
+                  ListTile(
+                    leading: const Icon(Icons.policy),
+                    title: const Text('Privacy Policy'),
+                    onTap: () {
+                      // Show privacy policy
+                    },
+                  ),
+                ],
+              ),
+
+              const SizedBox(height: 16),
+              
+              // Log Out Button
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                child: ElevatedButton(
+                  onPressed: () async {
+                    await AuthService().logout();
+                    if (context.mounted) {
+                      Navigator.of(context).pushAndRemoveUntil(
+                        MaterialPageRoute(builder: (_) => const WelcomePage()),
+                        (route) => false,
+                      );
+                    }
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.red,
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                  ),
+                  child: const Text('Log out'),
+                ),
+              ),
+              const SizedBox(height: 32),
+            ],
+          );
+        },
       ),
     );
   }
