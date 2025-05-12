@@ -233,6 +233,40 @@ class DatabaseService {
     }
   }
 
+  Future<void> addFriend(String userId, String friendId) async {
+    final users = await getUsers();
+    final userIndex = users.indexWhere((user) => user['id'] == userId);
+    final friendIndex = users.indexWhere((user) => user['id'] == friendId);
+    
+    if (userIndex != -1 && friendIndex != -1) {
+      // Initialize friends list if it doesn't exist
+      users[userIndex]['friends'] ??= [];
+      users[friendIndex]['friends'] ??= [];
+      
+      // Add friend to user's friends list if not already there
+      if (!(users[userIndex]['friends'] as List).contains(friendId)) {
+        (users[userIndex]['friends'] as List).add(friendId);
+      }
+      
+      // Add user to friend's friends list if not already there
+      if (!(users[friendIndex]['friends'] as List).contains(userId)) {
+        (users[friendIndex]['friends'] as List).add(userId);
+      }
+      
+      await _writeJsonFile(_usersFileName, users);
+    }
+  }
+
+  Future<List<Map<String, dynamic>>> getFriends(String userId) async {
+    final user = await getUserById(userId);
+    if (user == null || user['friends'] == null) return [];
+    
+    final friendIds = List<String>.from(user['friends']);
+    final users = await getUsers();
+    
+    return users.where((u) => friendIds.contains(u['id'])).toList();
+  }
+
   // Group Methods
   Future<List<Map<String, dynamic>>> getGroups() async {
     return _readJsonFile(_groupsFileName);
@@ -1309,7 +1343,10 @@ class FriendsTab extends StatefulWidget {
 
 class _FriendsTabState extends State<FriendsTab> {
   late Future<Map<String, dynamic>> _balancesFuture;
-  late Future<List<Map<String, dynamic>>> _usersFuture;
+  late Future<List<Map<String, dynamic>>> _friendsFuture;
+  final TextEditingController _searchController = TextEditingController();
+  bool _isSearching = false;
+  String _searchError = '';
 
   @override
   void initState() {
@@ -1319,35 +1356,78 @@ class _FriendsTabState extends State<FriendsTab> {
 
   Future<void> _loadData() async {
     _balancesFuture = DatabaseService().calculateBalances(widget.userId);
-    _usersFuture = DatabaseService().getUsers();
+    _friendsFuture = DatabaseService().getFriends(widget.userId);
+  }
+
+  Future<void> _searchAndAddFriend(String email) async {
+    setState(() {
+      _isSearching = true;
+      _searchError = '';
+    });
+
+    try {
+      final user = await DatabaseService().getUserByEmail(email);
+      
+      if (user == null) {
+        setState(() {
+          _searchError = 'No user found with this email';
+        });
+        return;
+      }
+      
+      if (user['id'] == widget.userId) {
+        setState(() {
+          _searchError = 'You cannot add yourself as a friend';
+        });
+        return;
+      }
+
+      await DatabaseService().addFriend(widget.userId, user['id']);
+      
+      setState(() {
+        _searchController.clear();
+        _loadData();
+      });
+    } catch (e) {
+      setState(() {
+        _searchError = 'An error occurred while adding friend';
+      });
+    } finally {
+      setState(() {
+        _isSearching = false;
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Row(
-          children: [
-            IconButton(
+        title: TextField(
+          controller: _searchController,
+          decoration: InputDecoration(
+            hintText: 'Search by email',
+            border: InputBorder.none,
+            suffixIcon: IconButton(
               icon: const Icon(Icons.search),
               onPressed: () {
-                // Search functionality
+                if (_searchController.text.isNotEmpty) {
+                  _searchAndAddFriend(_searchController.text.trim());
+                }
               },
             ),
-            const Spacer(),
-            TextButton(
-              onPressed: () {
-                // Add friends functionality
-              },
-              child: const Text(
-                'Add friends',
-                style: TextStyle(
-                  color: Color(0xFF1CC29F),
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            ),
-          ],
+          ),
+          onSubmitted: (value) {
+            if (value.isNotEmpty) {
+              _searchAndAddFriend(value.trim());
+            }
+          },
         ),
       ),
       body: RefreshIndicator(
@@ -1358,37 +1438,60 @@ class _FriendsTabState extends State<FriendsTab> {
         },
         child: FutureBuilder<Map<String, dynamic>>(
           future: _balancesFuture,
-          builder: (context, snapshot) {
-            if (snapshot.connectionState == ConnectionState.waiting) {
+          builder: (context, balanceSnapshot) {
+            if (balanceSnapshot.connectionState == ConnectionState.waiting) {
               return const Center(child: CircularProgressIndicator());
             }
 
-            if (snapshot.hasError) {
-              return Center(child: Text('Error: ${snapshot.error}'));
+            if (balanceSnapshot.hasError) {
+              return Center(child: Text('Error: ${balanceSnapshot.error}'));
             }
 
-            final balances = snapshot.data!;
+            final balances = balanceSnapshot.data!;
             final netBalance = balances['netBalance'] as double;
-            final userBalances = List<Map<String, dynamic>>.from(balances['userBalances']);
+            final userBalances = Map<String, Map<String, dynamic>>.fromEntries(
+              (balances['userBalances'] as List).map((b) => MapEntry(b['userId'], b))
+            );
 
-            return ListView(
-              padding: const EdgeInsets.all(16),
-              children: [
-                // Overall balance
-                Container(
-                  padding: const EdgeInsets.symmetric(vertical: 8),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text(
-                        'Overall, you are ${netBalance >= 0 ? 'owed' : 'owe'}',
-                        style: const TextStyle(
-                          fontSize: 20,
-                          fontWeight: FontWeight.bold,
+            return FutureBuilder<List<Map<String, dynamic>>>(
+              future: _friendsFuture,
+              builder: (context, friendsSnapshot) {
+                if (friendsSnapshot.connectionState == ConnectionState.waiting) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+
+                final friends = friendsSnapshot.data ?? [];
+
+                return ListView(
+                  padding: const EdgeInsets.all(16),
+                  children: [
+                    if (_searchError.isNotEmpty)
+                      Container(
+                        padding: const EdgeInsets.all(8),
+                        margin: const EdgeInsets.only(bottom: 16),
+                        decoration: BoxDecoration(
+                          color: Colors.red.shade100,
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Text(
+                          _searchError,
+                          style: TextStyle(color: Colors.red.shade900),
                         ),
                       ),
-                      Row(
+
+                    // Overall balance
+                    Container(
+                      padding: const EdgeInsets.symmetric(vertical: 8),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
+                          Text(
+                            'Overall, you are ${netBalance >= 0 ? 'owed' : 'owe'}',
+                            style: const TextStyle(
+                              fontSize: 20,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
                           Text(
                             'PKR ${netBalance.abs().toStringAsFixed(2)}',
                             style: TextStyle(
@@ -1397,54 +1500,86 @@ class _FriendsTabState extends State<FriendsTab> {
                               color: netBalance >= 0 ? const Color(0xFF1CC29F) : Colors.orange,
                             ),
                           ),
-                          const SizedBox(width: 8),
-                          const Icon(Icons.tune),
                         ],
                       ),
-                    ],
-                  ),
-                ),
-                const Divider(),
-                // User balances
-                ...userBalances.map((balance) {
-                  final isOwed = balance['type'] == 'owed';
-                  final isSettled = balance['type'] == 'settled';
-                  
-                  return ListTile(
-                    leading: CircleAvatar(
-                      backgroundColor: isOwed 
-                          ? Colors.red.shade700 
-                          : isSettled 
-                              ? Colors.blue.shade700 
-                              : Colors.green.shade700,
-                      child: Text(
-                        balance['name'].substring(0, 1).toUpperCase(),
-                        style: const TextStyle(color: Colors.white),
-                      ),
                     ),
-                    title: Text(
-                      balance['name'],
-                      style: const TextStyle(
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    trailing: isSettled 
-                        ? const Text('settled up')
-                        : Text(
-                            isOwed 
-                                ? 'owes you PKR ${balance['amount'].toStringAsFixed(2)}'
-                                : 'you owe PKR ${balance['amount'].toStringAsFixed(2)}',
-                            style: TextStyle(
-                              color: isOwed ? const Color(0xFF1CC29F) : Colors.orange,
+                    const Divider(),
+
+                    if (friends.isEmpty)
+                      Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            const SizedBox(height: 32),
+                            Icon(
+                              Icons.people_outline,
+                              size: 64,
+                              color: Colors.grey.shade400,
+                            ),
+                            const SizedBox(height: 16),
+                            Text(
+                              'No friends yet',
+                              style: TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.grey.shade600,
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              'Search for friends by their email address',
+                              style: TextStyle(
+                                color: Colors.grey.shade600,
+                              ),
+                            ),
+                          ],
+                        ),
+                      )
+                    else
+                      ...friends.map((friend) {
+                        final balance = userBalances[friend['id']];
+                        final isOwed = balance?['type'] == 'owed';
+                        final isSettled = balance?['type'] == 'settled';
+                        final amount = balance?['amount'] ?? 0.0;
+                        
+                        return ListTile(
+                          leading: CircleAvatar(
+                            backgroundColor: isOwed 
+                                ? Colors.red.shade700 
+                                : isSettled 
+                                    ? Colors.blue.shade700 
+                                    : Colors.green.shade700,
+                            child: Text(
+                              friend['name'].substring(0, 1).toUpperCase(),
+                              style: const TextStyle(color: Colors.white),
+                            ),
+                          ),
+                          title: Text(
+                            friend['name'],
+                            style: const TextStyle(
                               fontWeight: FontWeight.bold,
                             ),
                           ),
-                    onTap: () {
-                      // Navigate to friend details
-                    },
-                  );
-                }).toList(),
-              ],
+                          subtitle: Text(friend['email']),
+                          trailing: isSettled 
+                              ? const Text('settled up')
+                              : Text(
+                                  isOwed 
+                                      ? 'owes you PKR ${amount.toStringAsFixed(2)}'
+                                      : 'you owe PKR ${amount.toStringAsFixed(2)}',
+                                  style: TextStyle(
+                                    color: isOwed ? const Color(0xFF1CC29F) : Colors.orange,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                          onTap: () {
+                            // Navigate to friend details
+                          },
+                        );
+                      }).toList(),
+                  ],
+                );
+              },
             );
           },
         ),
