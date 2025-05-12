@@ -4142,10 +4142,17 @@ class ActivityListItem extends StatelessWidget {
 }
 
 // Account Tab
-class AccountTab extends StatelessWidget {
+class AccountTab extends StatefulWidget {
   final Map<String, dynamic> user;
 
   const AccountTab({super.key, required this.user});
+
+  @override
+  State<AccountTab> createState() => _AccountTabState();
+}
+
+class _AccountTabState extends State<AccountTab> {
+  bool _notificationsEnabled = true;
 
   @override
   Widget build(BuildContext context) {
@@ -4155,114 +4162,188 @@ class AccountTab extends StatelessWidget {
       ),
       body: ListView(
         children: [
-          const Padding(
-            padding: EdgeInsets.all(16.0),
-            child: Text(
-              'Settings',
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-                color: Colors.grey,
-              ),
-            ),
-          ),
+          // Profile Section
           ListTile(
             leading: CircleAvatar(
               backgroundColor: Colors.red.shade700,
               child: Text(
-                user['name'].substring(0, 1).toUpperCase(),
+                widget.user['name'].substring(0, 1).toUpperCase(),
                 style: const TextStyle(color: Colors.white),
               ),
             ),
             title: Text(
-              user['name'],
+              widget.user['name'],
               style: const TextStyle(fontWeight: FontWeight.bold),
             ),
-            subtitle: Text(user['email']),
+            subtitle: Text(widget.user['email']),
             trailing: const Icon(Icons.camera_alt),
             onTap: () {
-              // Edit profile
               Navigator.of(context).push(
                 MaterialPageRoute(
-                  builder: (_) => EditProfilePage(user: user),
+                  builder: (_) => EditProfilePage(user: widget.user),
                 ),
               );
             },
           ),
           const Divider(),
-          ListTile(
-            leading: const Icon(Icons.qr_code),
-            title: const Text('Scan code'),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () {
-              // Scan QR code
-            },
-          ),
-          ListTile(
-            leading: const Icon(Icons.diamond, color: Colors.purple),
-            title: const Text('Splitwise Pro'),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () {
-              // Upgrade to Pro
-            },
-          ),
-          const Divider(),
-          const Padding(
-            padding: EdgeInsets.all(16.0),
-            child: Text(
-              'Preferences',
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-                color: Colors.grey,
+
+          // Settings Section
+          ExpansionTile(
+            leading: const Icon(Icons.settings),
+            title: const Text('Settings'),
+            children: [
+              // Currency
+              ListTile(
+                leading: const Icon(Icons.currency_exchange),
+                title: const Text('Currency'),
+                subtitle: const Text('PKR - Pakistani Rupee'),
+                onTap: () {
+                  // Currency settings
+                },
               ),
-            ),
+              // Language
+              ListTile(
+                leading: const Icon(Icons.language),
+                title: const Text('Language'),
+                subtitle: const Text('English'),
+                onTap: () {
+                  // Language settings
+                },
+              ),
+              // Theme
+              ListTile(
+                leading: const Icon(Icons.palette),
+                title: const Text('Theme'),
+                subtitle: const Text('Light'),
+                onTap: () {
+                  // Theme settings
+                },
+              ),
+            ],
           ),
-          ListTile(
-            leading: const Icon(Icons.notifications),
-            title: const Text('Notifications'),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () {
-              // Notification settings
-            },
+
+          // Preferences Section
+          ExpansionTile(
+            leading: const Icon(Icons.tune),
+            title: const Text('Preferences'),
+            children: [
+              // Notifications
+              SwitchListTile(
+                secondary: const Icon(Icons.notifications),
+                title: const Text('Notifications'),
+                subtitle: const Text('Enable push notifications'),
+                value: _notificationsEnabled,
+                onChanged: (bool value) {
+                  setState(() {
+                    _notificationsEnabled = value;
+                  });
+                },
+              ),
+              // Default Split
+              ListTile(
+                leading: const Icon(Icons.people),
+                title: const Text('Default Split'),
+                subtitle: const Text('Equal split'),
+                onTap: () {
+                  // Default split settings
+                },
+              ),
+              // Categories
+              ListTile(
+                leading: const Icon(Icons.category),
+                title: const Text('Categories'),
+                subtitle: const Text('Manage expense categories'),
+                onTap: () {
+                  // Categories settings
+                },
+              ),
+            ],
           ),
-          ListTile(
+
+          // Security Section
+          ExpansionTile(
             leading: const Icon(Icons.security),
             title: const Text('Security'),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () {
-              // Security settings
-            },
-          ),
-          const Divider(),
-          const Padding(
-            padding: EdgeInsets.all(16.0),
-            child: Text(
-              'Feedback',
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-                color: Colors.grey,
+            children: [
+              // Change Password
+              ListTile(
+                leading: const Icon(Icons.lock),
+                title: const Text('Change Password'),
+                onTap: () {
+                  // Change password
+                },
               ),
-            ),
+              // Reset Password
+              ListTile(
+                leading: const Icon(Icons.restore),
+                title: const Text('Reset Password'),
+                onTap: () {
+                  // Reset password
+                },
+              ),
+              // Privacy Settings
+              ListTile(
+                leading: const Icon(Icons.privacy_tip),
+                title: const Text('Privacy Settings'),
+                onTap: () {
+                  // Privacy settings
+                },
+              ),
+              // Login Activity
+              ListTile(
+                leading: const Icon(Icons.history),
+                title: const Text('Login Activity'),
+                onTap: () {
+                  // Login activity
+                },
+              ),
+            ],
           ),
-          ListTile(
-            leading: const Icon(Icons.star),
-            title: const Text('Rate Splitwise'),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () {
-              // Rate app
-            },
+
+          // Help & Support Section
+          ExpansionTile(
+            leading: const Icon(Icons.help),
+            title: const Text('Help & Support'),
+            children: [
+              // Contact Us
+              ListTile(
+                leading: const Icon(Icons.email),
+                title: const Text('Contact Us'),
+                subtitle: const Text('ask@billsplitter.com'),
+                onTap: () {
+                  // Launch email client
+                },
+              ),
+              // FAQs
+              ListTile(
+                leading: const Icon(Icons.question_answer),
+                title: const Text('FAQs'),
+                onTap: () {
+                  // Show FAQs
+                },
+              ),
+              // Terms & Conditions
+              ListTile(
+                leading: const Icon(Icons.description),
+                title: const Text('Terms & Conditions'),
+                onTap: () {
+                  // Show terms
+                },
+              ),
+              // Privacy Policy
+              ListTile(
+                leading: const Icon(Icons.policy),
+                title: const Text('Privacy Policy'),
+                onTap: () {
+                  // Show privacy policy
+                },
+              ),
+            ],
           ),
-          ListTile(
-            leading: const Icon(Icons.contact_support),
-            title: const Text('Contact us'),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () {
-              // Contact support
-            },
-          ),
+
           const SizedBox(height: 16),
+          
+          // Log Out Button
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16.0),
             child: ElevatedButton(
@@ -4277,6 +4358,7 @@ class AccountTab extends StatelessWidget {
               },
               style: ElevatedButton.styleFrom(
                 backgroundColor: Colors.red,
+                padding: const EdgeInsets.symmetric(vertical: 16),
               ),
               child: const Text('Log out'),
             ),
