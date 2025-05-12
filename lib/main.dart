@@ -2,7 +2,6 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
@@ -10,17 +9,25 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
 import 'dart:html' as html;
 import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:logging/logging.dart';
 
 void main() async {
+  Logger.root.level = Level.ALL;
+  Logger.root.onRecord.listen((record) {
+    // ignore: avoid_print
+    print('${record.level.name}: ${record.time}: ${record.message}');
+  });
+  
+  final log = Logger('Main');
   try {
-    print('Starting app...');
+    log.info('Starting app...');
     WidgetsFlutterBinding.ensureInitialized();
-    print('Flutter bindings initialized');
+    log.info('Flutter bindings initialized');
     
     runApp(const SplitWiseApp());
-    print('App started');
+    log.info('App started');
   } catch (e) {
-    print('Error starting app: $e');
+    log.severe('Error starting app: $e');
     rethrow;
   }
 }
@@ -79,6 +86,7 @@ class SplitWiseApp extends StatelessWidget {
 
 // Database Service
 class DatabaseService {
+  static final _log = Logger('DatabaseService');
   static final DatabaseService _instance = DatabaseService._internal();
   factory DatabaseService() => _instance;
   DatabaseService._internal();
@@ -109,28 +117,28 @@ class DatabaseService {
 
   Future<void> _createFileIfNotExists(String fileName) async {
     try {
-      print('Creating file if not exists: $fileName');
+      _log.info('Creating file if not exists: $fileName');
       if (kIsWeb) {
         final storage = html.window.localStorage;
         if (!storage.containsKey(fileName)) {
-          print('File does not exist in web storage, creating: $fileName');
+          _log.info('File does not exist in web storage, creating: $fileName');
           storage[fileName] = '[]';
         }
-        print('File exists in web storage: $fileName');
+        _log.info('File exists in web storage: $fileName');
         return;
       }
 
       final file = await _getFile(fileName);
       if (!await file.exists()) {
-        print('File does not exist, creating: $fileName');
+        _log.info('File does not exist, creating: $fileName');
         await file.create();
         await file.writeAsString('[]');
-        print('File created and initialized: $fileName');
+        _log.info('File created and initialized: $fileName');
       } else {
-        print('File already exists: $fileName');
+        _log.info('File already exists: $fileName');
       }
     } catch (e) {
-      print('Error creating file $fileName: $e');
+      _log.severe('Error creating file $fileName: $e');
       rethrow;
     }
   }
@@ -146,7 +154,7 @@ class DatabaseService {
       }
       return List<Map<String, dynamic>>.from(jsonDecode(contents));
     } catch (e) {
-      print('Error reading file $fileName: $e');
+      _log.severe('Error reading file $fileName: $e');
       return [];
     }
   }
@@ -161,7 +169,7 @@ class DatabaseService {
         await file.writeAsString(contents);
       }
     } catch (e) {
-      print('Error writing file $fileName: $e');
+      _log.severe('Error writing file $fileName: $e');
       rethrow;
     }
   }
@@ -174,15 +182,15 @@ class DatabaseService {
 
   Future<void> initializeDatabase() async {
     try {
-      print('Starting database initialization...');
+      _log.info('Starting database initialization...');
       await _createFileIfNotExists(_usersFileName);
       await _createFileIfNotExists(_groupsFileName);
       await _createFileIfNotExists(_expensesFileName);
       await _createFileIfNotExists(_activitiesFileName);
       await _createFileIfNotExists(_settlementsFileName);
-      print('Database initialization completed');
+      _log.info('Database initialization completed');
     } catch (e) {
-      print('Error during database initialization: $e');
+      _log.severe('Error during database initialization: $e');
       rethrow;
     }
   }
@@ -519,6 +527,7 @@ class DatabaseService {
 
 // Auth Service
 class AuthService {
+  static final _log = Logger('AuthService');
   static final AuthService _instance = AuthService._internal();
   factory AuthService() => _instance;
   AuthService._internal();
@@ -538,7 +547,7 @@ class AuthService {
       if (userId == null) return null;
       return _db.getUserById(userId);
     } catch (e) {
-      print('Error getting current user: $e');
+      _log.severe('Error getting current user: $e');
       return null;
     }
   }
@@ -553,7 +562,7 @@ class AuthService {
         await prefs.setString(_authKey, userId);
       }
     } catch (e) {
-      print('Error setting current user: $e');
+      _log.severe('Error setting current user: $e');
     }
   }
 
@@ -566,7 +575,7 @@ class AuthService {
         await prefs.remove(_authKey);
       }
     } catch (e) {
-      print('Error during logout: $e');
+      _log.severe('Error during logout: $e');
     }
   }
 
@@ -628,25 +637,27 @@ class SplashScreen extends StatefulWidget {
 }
 
 class _SplashScreenState extends State<SplashScreen> {
+  static final _log = Logger('SplashScreen');
+
   @override
   void initState() {
     super.initState();
-    print('Starting initialization...');
+    _log.info('Starting initialization...');
     _initialize();
   }
 
   Future<void> _initialize() async {
     try {
-      print('Initializing database...');
+      _log.info('Initializing database...');
       await DatabaseService().initializeDatabase();
-      print('Database initialized');
+      _log.info('Database initialized');
       
-      print('Checking login status...');
+      _log.info('Checking login status...');
       final isLoggedIn = await AuthService().isLoggedIn();
-      print('Login status checked: $isLoggedIn');
+      _log.info('Login status checked: $isLoggedIn');
 
       if (mounted) {
-        print('Navigating to next screen...');
+        _log.info('Navigating to next screen...');
         if (isLoggedIn) {
           Navigator.of(context).pushReplacement(
             MaterialPageRoute(builder: (_) => const HomePage()),
@@ -656,16 +667,16 @@ class _SplashScreenState extends State<SplashScreen> {
             MaterialPageRoute(builder: (_) => const WelcomePage()),
           );
         }
-        print('Navigation completed');
+        _log.info('Navigation completed');
       }
     } catch (e) {
-      print('Error during initialization: $e');
+      _log.severe('Error during initialization: $e');
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    print('Building splash screen');
+    _log.info('Building splash screen');
     return Scaffold(
       body: Center(
         child: Column(
@@ -745,7 +756,7 @@ class WelcomePage extends StatelessWidget {
                           style: TextStyle(
                             fontSize: 60,
                             fontWeight: FontWeight.bold,
-                            color: Colors.white.withOpacity(0.9),
+                            color: Colors.white.withAlpha(230),
                           ),
                         ),
                       ),
@@ -1237,7 +1248,7 @@ class _HomePageState extends State<HomePage> {
         }
 
         final user = snapshot.data!;
-        final List<Widget> _pages = [
+        final List<Widget> pages = [
           FriendsTab(userId: user['id']),
           GroupsTab(userId: user['id']),
           AddExpenseTab(userId: user['id']),
@@ -1246,7 +1257,7 @@ class _HomePageState extends State<HomePage> {
         ];
 
         return Scaffold(
-          body: _pages[_currentIndex],
+          body: pages[_currentIndex],
           bottomNavigationBar: BottomNavigationBar(
             currentIndex: _currentIndex,
             onTap: (index) {
@@ -1841,7 +1852,7 @@ class _GroupDetailPageState extends State<GroupDetailPage> {
                                             size: 64,
                                             color: Colors.grey,
                                           ),
-                                          const SizedBox(height: 16),
+                      const SizedBox(height: 16),
                                           const Text(
                                             'No expenses yet',
                                             style: TextStyle(
@@ -1901,7 +1912,7 @@ class _GroupDetailPageState extends State<GroupDetailPage> {
                                       final isUserInvolved = debt['from']['id'] == widget.userId || 
                                                             debt['to']['id'] == widget.userId;
                                       
-                                      return ListTile(
+                        return ListTile(
                                         title: Row(
                                           children: [
                                             Text(
@@ -1990,11 +2001,11 @@ class _GroupDetailPageState extends State<GroupDetailPage> {
                     ),
                   );
                 },
-              );
-            },
-          );
-        },
-      ),
+                );
+              },
+            );
+          },
+        ),
       floatingActionButton: FloatingActionButton(
         onPressed: () {
           Navigator.of(context).push(
@@ -3330,4 +3341,4 @@ class _EditProfilePageState extends State<EditProfilePage> {
       ),
     );
   }
-}
+  }
