@@ -155,6 +155,11 @@ class SplitWiseApp extends StatelessWidget {
             ),
           ),
           darkTheme: ThemeData(
+            primaryTextTheme: const TextTheme(
+              bodyLarge: TextStyle(color: Colors.white),
+              bodyMedium: TextStyle(color: Colors.white),
+              bodySmall: TextStyle(color: Colors.white),
+            ),
             primaryColor: const Color(0xFF1CC29F),
             colorScheme: ColorScheme.fromSeed(
               brightness: Brightness.dark,
@@ -4304,7 +4309,7 @@ class ActivityListItem extends StatelessWidget {
 
             return ListTile(
               leading: _buildLeadingIcon(),
-              title: _buildTitle(userData, relatedData),
+              title: _buildTitle(context, userData, relatedData),
               subtitle: Text(formattedDate),
               onTap: () {
                 // Show activity details
@@ -4374,17 +4379,18 @@ class ActivityListItem extends StatelessWidget {
     }
   }
 
-  Widget _buildTitle(
-      Map<String, dynamic>? userData, Map<String, dynamic>? relatedData) {
+  Widget _buildTitle(BuildContext context, Map<String, dynamic>? userData,
+      Map<String, dynamic>? relatedData) {
     final isCurrentUser = activity['userId'] == userId;
     final userName = userData?['name'] ?? 'Unknown';
+    final colorStyle = Theme.of(context).textTheme.bodyMedium;
 
     switch (activity['type']) {
       case 'expense_added':
         final groupName = relatedData?['name'] ?? 'a group';
         return RichText(
           text: TextSpan(
-            style: const TextStyle(color: Colors.black),
+            style: colorStyle,
             children: [
               TextSpan(
                 text: isCurrentUser ? 'You' : userName,
@@ -4408,7 +4414,7 @@ class ActivityListItem extends StatelessWidget {
         final relatedUserName = relatedData?['name'] ?? 'someone';
         return RichText(
           text: TextSpan(
-            style: const TextStyle(color: Colors.black),
+            style: colorStyle,
             children: [
               TextSpan(
                 text: isCurrentUser ? 'You' : userName,
@@ -4427,7 +4433,7 @@ class ActivityListItem extends StatelessWidget {
         final relatedUserName = relatedData?['name'] ?? 'someone';
         return RichText(
           text: TextSpan(
-            style: const TextStyle(color: Colors.black),
+            style: colorStyle,
             children: [
               TextSpan(
                 text: isCurrentUser ? 'You' : userName,
