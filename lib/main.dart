@@ -3286,7 +3286,6 @@ class _AddExpensePageState extends State<AddExpensePage> {
   final _amountController = TextEditingController();
   String _selectedCategory = 'other';
   DateTime _selectedDate = DateTime.now();
-  File? _receiptImage;
   List<Map<String, dynamic>> _members = [];
   final Map<String, double> _splitAmounts = {};
   String _splitMethod = 'equal';
@@ -3322,17 +3321,6 @@ class _AddExpensePageState extends State<AddExpensePage> {
           }
         });
       }
-    }
-  }
-
-  Future<void> _pickImage() async {
-    final picker = ImagePicker();
-    final pickedFile = await picker.pickImage(source: ImageSource.gallery);
-
-    if (pickedFile != null) {
-      setState(() {
-        _receiptImage = File(pickedFile.path);
-      });
     }
   }
 
@@ -3606,19 +3594,6 @@ class _AddExpensePageState extends State<AddExpensePage> {
                   });
                 }
               },
-            ),
-            const Divider(),
-
-            // Receipt
-            ListTile(
-              title: const Text('Add receipt'),
-              subtitle: _receiptImage != null
-                  ? const Text('Receipt added')
-                  : const Text('Add an image of your receipt'),
-              trailing: _receiptImage != null
-                  ? Image.file(_receiptImage!, width: 60, height: 60)
-                  : const Icon(Icons.camera_alt),
-              onTap: _pickImage,
             ),
             const Divider(),
 
