@@ -2695,9 +2695,9 @@ class _GroupDetailPageState extends State<GroupDetailPage> {
                                             fontWeight: isUserInvolved
                                                 ? FontWeight.bold
                                                 : FontWeight.normal,
-                                            color: isUserInvolved
-                                                ? Colors.black
-                                                : Colors.grey,
+                                            // color: isUserInvolved
+                                            //     ? Colors.black
+                                            //     : Colors.grey,
                                           ),
                                         ),
                                       );
