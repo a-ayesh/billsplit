@@ -13,28 +13,7 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:logging/logging.dart';
 import 'package:fl_chart/fl_chart.dart';
 
-// Currency class and list
-class Currency {
-  final String code;
-  final String name;
-  final String symbol;
-
-  const Currency({
-    required this.code,
-    required this.name,
-    required this.symbol,
-  });
-}
-
-const List<Currency> currencies = [
-  Currency(code: 'PKR', name: 'Pakistani Rupee', symbol: 'Rs'),
-  Currency(code: 'USD', name: 'US Dollar', symbol: '\$'),
-  Currency(code: 'EUR', name: 'Euro', symbol: '€'),
-  Currency(code: 'GBP', name: 'British Pound', symbol: '£'),
-  Currency(code: 'INR', name: 'Indian Rupee', symbol: '₹'),
-  Currency(code: 'AUD', name: 'Australian Dollar', symbol: 'A\$'),
-  Currency(code: 'CAD', name: 'Canadian Dollar', symbol: 'C\$'),
-];
+import 'package:splitwise/currency.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -57,7 +36,8 @@ class ThemeNotifier extends ChangeNotifier {
     notifyListeners();
 
     if (kIsWeb) {
-      html.window.localStorage['themeMode'] = mode == ThemeMode.dark ? 'dark' : 'light';
+      html.window.localStorage['themeMode'] =
+          mode == ThemeMode.dark ? 'dark' : 'light';
     } else {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setBool('isDarkMode', mode == ThemeMode.dark);
@@ -68,7 +48,8 @@ class ThemeNotifier extends ChangeNotifier {
     if (kIsWeb) {
       final storage = html.window.localStorage;
       if (storage.containsKey('themeMode')) {
-        _themeMode = storage['themeMode'] == 'dark' ? ThemeMode.dark : ThemeMode.light;
+        _themeMode =
+            storage['themeMode'] == 'dark' ? ThemeMode.dark : ThemeMode.light;
       }
     } else {
       final prefs = await SharedPreferences.getInstance();
@@ -168,7 +149,8 @@ class SplitWiseApp extends StatelessWidget {
               ),
               focusedBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(8),
-                borderSide: const BorderSide(color: Color(0xFF1CC29F), width: 2),
+                borderSide:
+                    const BorderSide(color: Color(0xFF1CC29F), width: 2),
               ),
             ),
           ),
@@ -209,7 +191,8 @@ class SplitWiseApp extends StatelessWidget {
               ),
               focusedBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(8),
-                borderSide: const BorderSide(color: Color(0xFF1CC29F), width: 2),
+                borderSide:
+                    const BorderSide(color: Color(0xFF1CC29F), width: 2),
               ),
             ),
             cardColor: const Color(0xFF1E1E1E),
@@ -238,7 +221,7 @@ class DatabaseService {
 
   Future<String> get _localPath async {
     if (kIsWeb) {
-      return '';  // Web doesn't need a path
+      return ''; // Web doesn't need a path
     }
     final directory = await getApplicationDocumentsDirectory();
     return directory.path;
@@ -298,7 +281,8 @@ class DatabaseService {
     }
   }
 
-  Future<void> _writeJsonFile(String fileName, List<Map<String, dynamic>> data) async {
+  Future<void> _writeJsonFile(
+      String fileName, List<Map<String, dynamic>> data) async {
     try {
       final contents = jsonEncode(data);
       if (kIsWeb) {
@@ -314,7 +298,8 @@ class DatabaseService {
   }
 
   Future<File> _getFile(String fileName) async {
-    if (kIsWeb) throw UnsupportedError('Web platform does not support File operations');
+    if (kIsWeb)
+      throw UnsupportedError('Web platform does not support File operations');
     final path = await _localPath;
     return File('$path/$fileName');
   }
@@ -376,22 +361,22 @@ class DatabaseService {
     final users = await getUsers();
     final userIndex = users.indexWhere((user) => user['id'] == userId);
     final friendIndex = users.indexWhere((user) => user['id'] == friendId);
-    
+
     if (userIndex != -1 && friendIndex != -1) {
       // Initialize friends list if it doesn't exist
       users[userIndex]['friends'] ??= [];
       users[friendIndex]['friends'] ??= [];
-      
+
       // Add friend to user's friends list if not already there
       if (!(users[userIndex]['friends'] as List).contains(friendId)) {
         (users[userIndex]['friends'] as List).add(friendId);
       }
-      
+
       // Add user to friend's friends list if not already there
       if (!(users[friendIndex]['friends'] as List).contains(userId)) {
         (users[friendIndex]['friends'] as List).add(userId);
       }
-      
+
       await _writeJsonFile(_usersFileName, users);
     }
   }
@@ -399,10 +384,10 @@ class DatabaseService {
   Future<List<Map<String, dynamic>>> getFriends(String userId) async {
     final user = await getUserById(userId);
     if (user == null || user['friends'] == null) return [];
-    
+
     final friendIds = List<String>.from(user['friends']);
     final users = await getUsers();
-    
+
     return users.where((u) => friendIds.contains(u['id'])).toList();
   }
 
@@ -413,9 +398,10 @@ class DatabaseService {
 
   Future<List<Map<String, dynamic>>> getGroupsByUserId(String userId) async {
     final groups = await getGroups();
-    return groups.where((group) => 
-      (group['members'] as List).any((member) => member['id'] == userId)
-    ).toList();
+    return groups
+        .where((group) =>
+            (group['members'] as List).any((member) => member['id'] == userId))
+        .toList();
   }
 
   Future<Map<String, dynamic>?> getGroupById(String id) async {
@@ -435,7 +421,8 @@ class DatabaseService {
 
   Future<void> updateGroup(Map<String, dynamic> updatedGroup) async {
     final groups = await getGroups();
-    final index = groups.indexWhere((group) => group['id'] == updatedGroup['id']);
+    final index =
+        groups.indexWhere((group) => group['id'] == updatedGroup['id']);
     if (index != -1) {
       groups[index] = updatedGroup;
       await _writeJsonFile(_groupsFileName, groups);
@@ -447,17 +434,20 @@ class DatabaseService {
     return _readJsonFile(_expensesFileName);
   }
 
-  Future<List<Map<String, dynamic>>> getExpensesByGroupId(String groupId) async {
+  Future<List<Map<String, dynamic>>> getExpensesByGroupId(
+      String groupId) async {
     final expenses = await getExpenses();
     return expenses.where((expense) => expense['groupId'] == groupId).toList();
   }
 
   Future<List<Map<String, dynamic>>> getExpensesByUserId(String userId) async {
     final expenses = await getExpenses();
-    return expenses.where((expense) => 
-      expense['paidBy'] == userId || 
-      (expense['splitWith'] as List).any((split) => split['userId'] == userId)
-    ).toList();
+    return expenses
+        .where((expense) =>
+            expense['paidBy'] == userId ||
+            (expense['splitWith'] as List)
+                .any((split) => split['userId'] == userId))
+        .toList();
   }
 
   Future<void> addExpense(Map<String, dynamic> expense) async {
@@ -468,7 +458,8 @@ class DatabaseService {
 
   Future<void> updateExpense(Map<String, dynamic> updatedExpense) async {
     final expenses = await getExpenses();
-    final index = expenses.indexWhere((expense) => expense['id'] == updatedExpense['id']);
+    final index =
+        expenses.indexWhere((expense) => expense['id'] == updatedExpense['id']);
     if (index != -1) {
       expenses[index] = updatedExpense;
       await _writeJsonFile(_expensesFileName, expenses);
@@ -480,14 +471,15 @@ class DatabaseService {
     return _readJsonFile(_activitiesFileName);
   }
 
-  Future<List<Map<String, dynamic>>> getActivitiesByUserId(String userId) async {
+  Future<List<Map<String, dynamic>>> getActivitiesByUserId(
+      String userId) async {
     final activities = await getActivities();
-    return activities.where((activity) => 
-      activity['userId'] == userId || 
-      activity['relatedUserId'] == userId
-    ).toList()..sort((a, b) => 
-      DateTime.parse(b['timestamp']).compareTo(DateTime.parse(a['timestamp']))
-    );
+    return activities
+        .where((activity) =>
+            activity['userId'] == userId || activity['relatedUserId'] == userId)
+        .toList()
+      ..sort((a, b) => DateTime.parse(b['timestamp'])
+          .compareTo(DateTime.parse(a['timestamp'])));
   }
 
   Future<void> addActivity(Map<String, dynamic> activity) async {
@@ -501,11 +493,13 @@ class DatabaseService {
     return _readJsonFile(_settlementsFileName);
   }
 
-  Future<List<Map<String, dynamic>>> getSettlementsByUserId(String userId) async {
+  Future<List<Map<String, dynamic>>> getSettlementsByUserId(
+      String userId) async {
     final settlements = await getSettlements();
-    return settlements.where((settlement) => 
-      settlement['payerId'] == userId || settlement['payeeId'] == userId
-    ).toList();
+    return settlements
+        .where((settlement) =>
+            settlement['payerId'] == userId || settlement['payeeId'] == userId)
+        .toList();
   }
 
   Future<void> addSettlement(Map<String, dynamic> settlement) async {
@@ -519,51 +513,55 @@ class DatabaseService {
     final expenses = await getExpenses();
     final settlements = await getSettlements();
     final users = await getUsers();
-    
+
     Map<String, double> balances = {};
-    
+
     // Initialize balances for all users
     for (var user in users) {
       if (user['id'] != userId) {
         balances[user['id']] = 0;
       }
     }
-    
+
     // Calculate from expenses
     for (var expense in expenses) {
       if (expense['paidBy'] == userId) {
         // Current user paid for others
         for (var split in expense['splitWith']) {
           if (split['userId'] != userId) {
-            balances[split['userId']] = (balances[split['userId']] ?? 0) + split['amount'];
+            balances[split['userId']] =
+                (balances[split['userId']] ?? 0) + split['amount'];
           }
         }
       } else {
         // Others paid and current user is involved
         for (var split in expense['splitWith']) {
           if (split['userId'] == userId) {
-            balances[expense['paidBy']] = (balances[expense['paidBy']] ?? 0) - split['amount'];
+            balances[expense['paidBy']] =
+                (balances[expense['paidBy']] ?? 0) - split['amount'];
           }
         }
       }
     }
-    
+
     // Adjust with settlements
     for (var settlement in settlements) {
       if (settlement['payerId'] == userId) {
         // User paid someone
-        balances[settlement['payeeId']] = (balances[settlement['payeeId']] ?? 0) - settlement['amount'];
+        balances[settlement['payeeId']] =
+            (balances[settlement['payeeId']] ?? 0) - settlement['amount'];
       } else if (settlement['payeeId'] == userId) {
         // User received payment
-        balances[settlement['payerId']] = (balances[settlement['payerId']] ?? 0) + settlement['amount'];
+        balances[settlement['payerId']] =
+            (balances[settlement['payerId']] ?? 0) + settlement['amount'];
       }
     }
-    
+
     // Prepare result
     double totalOwed = 0;
     double totalOwe = 0;
     List<Map<String, dynamic>> userBalances = [];
-    
+
     for (var entry in balances.entries) {
       if (entry.value > 0) {
         totalOwed += entry.value;
@@ -593,7 +591,7 @@ class DatabaseService {
         });
       }
     }
-    
+
     return {
       'totalOwed': totalOwed,
       'totalOwe': totalOwe,
@@ -606,74 +604,68 @@ class DatabaseService {
   Future<List<Map<String, dynamic>>> simplifyDebts(String groupId) async {
     final group = await getGroupById(groupId);
     if (group == null) return [];
-    
+
     final members = List<Map<String, dynamic>>.from(group['members']);
     final expenses = await getExpensesByGroupId(groupId);
     final settlements = await getSettlements();
-    
+
     // Calculate net balance for each member
     Map<String, double> balances = {};
     for (var member in members) {
       balances[member['id']] = 0;
     }
-    
+
     // Process expenses
     for (var expense in expenses) {
       final paidBy = expense['paidBy'];
       balances[paidBy] = (balances[paidBy] ?? 0) + expense['amount'];
-      
+
       for (var split in expense['splitWith']) {
         final userId = split['userId'];
         balances[userId] = (balances[userId] ?? 0) - split['amount'];
       }
     }
-    
+
     // Process settlements
     for (var settlement in settlements) {
       if (settlement['groupId'] == groupId) {
-        balances[settlement['payerId']] = (balances[settlement['payerId']] ?? 0) - settlement['amount'];
-        balances[settlement['payeeId']] = (balances[settlement['payeeId']] ?? 0) + settlement['amount'];
+        balances[settlement['payerId']] =
+            (balances[settlement['payerId']] ?? 0) - settlement['amount'];
+        balances[settlement['payeeId']] =
+            (balances[settlement['payeeId']] ?? 0) + settlement['amount'];
       }
     }
-    
+
     // Separate debtors and creditors
     List<Map<String, dynamic>> debtors = [];
     List<Map<String, dynamic>> creditors = [];
-    
+
     for (var entry in balances.entries) {
       if (entry.value < 0) {
-        debtors.add({
-          'id': entry.key,
-          'amount': entry.value.abs()
-        });
+        debtors.add({'id': entry.key, 'amount': entry.value.abs()});
       } else if (entry.value > 0) {
-        creditors.add({
-          'id': entry.key,
-          'amount': entry.value
-        });
+        creditors.add({'id': entry.key, 'amount': entry.value});
       }
     }
-    
+
     // Sort by amount (descending)
     debtors.sort((a, b) => b['amount'].compareTo(a['amount']));
     creditors.sort((a, b) => b['amount'].compareTo(a['amount']));
-    
+
     // Generate simplified transactions
     List<Map<String, dynamic>> transactions = [];
-    
+
     while (debtors.isNotEmpty && creditors.isNotEmpty) {
       final debtor = debtors.first;
       final creditor = creditors.first;
-      
-      final amount = min(
-        (debtor['amount'] as num).toDouble(),
-        (creditor['amount'] as num).toDouble()
-      );
-      
+
+      final amount = min((debtor['amount'] as num).toDouble(),
+          (creditor['amount'] as num).toDouble());
+
       if (amount > 0) {
         final debtorUser = await getUserById(debtor['id']);
         final creditorUser = await getUserById(creditor['id']);
-        
+
         transactions.add({
           'from': {
             'id': debtor['id'],
@@ -685,15 +677,15 @@ class DatabaseService {
           },
           'amount': amount
         });
-        
+
         debtor['amount'] -= amount;
         creditor['amount'] -= amount;
       }
-      
+
       if (debtor['amount'] < 0.01) debtors.removeAt(0);
       if (creditor['amount'] < 0.01) creditors.removeAt(0);
     }
-    
+
     return transactions;
   }
 
@@ -702,16 +694,16 @@ class DatabaseService {
     final users = await getUsers();
     final userIndex = users.indexWhere((user) => user['id'] == userId);
     final friendIndex = users.indexWhere((user) => user['id'] == friendId);
-    
+
     if (userIndex != -1 && friendIndex != -1) {
       // Remove friend from user's friends list
       users[userIndex]['friends'] ??= [];
       users[userIndex]['friends'].remove(friendId);
-      
+
       // Remove user from friend's friends list
       users[friendIndex]['friends'] ??= [];
       users[friendIndex]['friends'].remove(userId);
-      
+
       await _writeJsonFile(_usersFileName, users);
     }
   }
@@ -721,7 +713,7 @@ class DatabaseService {
     final groups = await getGroups();
     groups.removeWhere((group) => group['id'] == groupId);
     await _writeJsonFile(_groupsFileName, groups);
-    
+
     // Delete associated expenses
     final expenses = await getExpenses();
     expenses.removeWhere((expense) => expense['groupId'] == groupId);
@@ -730,36 +722,38 @@ class DatabaseService {
 
   Future<void> deleteExpense(String expenseId) async {
     final expenses = await getExpenses();
-    final expenseIndex = expenses.indexWhere((expense) => expense['id'] == expenseId);
-    
+    final expenseIndex =
+        expenses.indexWhere((expense) => expense['id'] == expenseId);
+
     if (expenseIndex != -1) {
       final expense = expenses[expenseIndex];
       final groupId = expense['groupId'];
       final group = await getGroupById(groupId);
-      
+
       if (group != null) {
         // Reverse the balances
         final members = List<Map<String, dynamic>>.from(group['members']);
         final splitWith = List<Map<String, dynamic>>.from(expense['splitWith']);
         final amount = expense['amount'];
         final paidBy = expense['paidBy'];
-        
+
         for (var i = 0; i < members.length; i++) {
           final member = members[i];
           final split = splitWith.firstWhere(
             (s) => s['userId'] == member['id'],
             orElse: () => {'amount': 0.0},
           );
-          
+
           if (member['id'] == paidBy) {
             // Reverse payer's balance
-            member['balance'] = (member['balance'] ?? 0.0) - (amount - split['amount']);
+            member['balance'] =
+                (member['balance'] ?? 0.0) - (amount - split['amount']);
           } else {
             // Reverse other members' balances
             member['balance'] = (member['balance'] ?? 0.0) + split['amount'];
           }
         }
-        
+
         // Update group with reversed balances
         final updatedGroup = {
           ...group,
@@ -767,7 +761,7 @@ class DatabaseService {
         };
         await updateGroup(updatedGroup);
       }
-      
+
       // Remove the expense
       expenses.removeAt(expenseIndex);
       await _writeJsonFile(_expensesFileName, expenses);
@@ -781,26 +775,25 @@ class DatabaseService {
         final bytes = await imageFile.readAsBytes();
         final base64Image = base64Encode(bytes);
         final storage = html.window.localStorage;
-        final key = 'profile_images';
-        
+        const key = 'profile_images';
+
         // Get existing profile images map or create new one
         Map<String, dynamic> profileImages = {};
         if (storage.containsKey(key)) {
-          profileImages = Map<String, dynamic>.from(
-            jsonDecode(storage[key]!)
-          );
+          profileImages = Map<String, dynamic>.from(jsonDecode(storage[key]!));
         }
-        
+
         // Add/update this user's profile image
         profileImages[userId] = base64Image;
         storage[key] = jsonEncode(profileImages);
-        
+
         return userId; // Return userId as the key
       } else {
         // For mobile, save to app directory
         final directory = await getApplicationDocumentsDirectory();
         final fileName = 'profile_image_$userId.jpg';
-        final savedImage = await (imageFile as File).copy('${directory.path}/$fileName');
+        final savedImage =
+            await (imageFile as File).copy('${directory.path}/$fileName');
         return savedImage.path;
       }
     } catch (e) {
@@ -813,13 +806,12 @@ class DatabaseService {
     try {
       if (kIsWeb) {
         final storage = html.window.localStorage;
-        final key = 'profile_images';
-        
+        const key = 'profile_images';
+
         if (storage.containsKey(key)) {
-          final profileImages = Map<String, dynamic>.from(
-            jsonDecode(storage[key]!)
-          );
-          
+          final profileImages =
+              Map<String, dynamic>.from(jsonDecode(storage[key]!));
+
           if (profileImages.containsKey(userId)) {
             return profileImages[userId];
           }
@@ -898,7 +890,8 @@ class AuthService {
     return user != null;
   }
 
-  Future<Map<String, dynamic>?> signUp(String name, String email, String password) async {
+  Future<Map<String, dynamic>?> signUp(
+      String name, String email, String password) async {
     final existingUser = await _db.getUserByEmail(email);
     if (existingUser != null) return null;
 
@@ -965,7 +958,7 @@ class _SplashScreenState extends State<SplashScreen> {
       _log.info('Initializing database...');
       await DatabaseService().initializeDatabase();
       _log.info('Database initialized');
-      
+
       _log.info('Checking login status...');
       final isLoggedIn = await AuthService().isLoggedIn();
       _log.info('Login status checked: $isLoggedIn');
@@ -1281,7 +1274,8 @@ class _SignUpPageState extends State<SignUpPage> {
                     if (value == null || value.isEmpty) {
                       return 'Please enter your email';
                     }
-                    if (!RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$').hasMatch(value)) {
+                    if (!RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$')
+                        .hasMatch(value)) {
                       return 'Please enter a valid email';
                     }
                     return null;
@@ -1452,7 +1446,9 @@ class _LoginPageState extends State<LoginPage> {
                     labelText: 'Password',
                     suffixIcon: IconButton(
                       icon: Icon(
-                        _obscurePassword ? Icons.visibility : Icons.visibility_off,
+                        _obscurePassword
+                            ? Icons.visibility
+                            : Icons.visibility_off,
                       ),
                       onPressed: () {
                         setState(() {
@@ -1647,14 +1643,14 @@ class _FriendsTabState extends State<FriendsTab> {
 
     try {
       final user = await DatabaseService().getUserByEmail(email);
-      
+
       if (user == null) {
         setState(() {
           _searchError = 'No user found with this email';
         });
         return;
       }
-      
+
       if (user['id'] == widget.userId) {
         setState(() {
           _searchError = 'You cannot add yourself as a friend';
@@ -1663,7 +1659,7 @@ class _FriendsTabState extends State<FriendsTab> {
       }
 
       await DatabaseService().addFriend(widget.userId, user['id']);
-      
+
       setState(() {
         _searchController.clear();
         _loadData();
@@ -1684,7 +1680,8 @@ class _FriendsTabState extends State<FriendsTab> {
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Remove Friend'),
-        content: Text('Are you sure you want to remove ${friend['name']} from your friends?'),
+        content: Text(
+            'Are you sure you want to remove ${friend['name']} from your friends?'),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(false),
@@ -1762,13 +1759,14 @@ class _FriendsTabState extends State<FriendsTab> {
             final balances = balanceSnapshot.data!;
             final netBalance = balances['netBalance'] as double;
             final userBalances = Map<String, Map<String, dynamic>>.fromEntries(
-              (balances['userBalances'] as List).map((b) => MapEntry(b['userId'], b))
-            );
+                (balances['userBalances'] as List)
+                    .map((b) => MapEntry(b['userId'], b)));
 
             return FutureBuilder<List<Map<String, dynamic>>>(
               future: _friendsFuture,
               builder: (context, friendsSnapshot) {
-                if (friendsSnapshot.connectionState == ConnectionState.waiting) {
+                if (friendsSnapshot.connectionState ==
+                    ConnectionState.waiting) {
                   return const Center(child: CircularProgressIndicator());
                 }
 
@@ -1809,7 +1807,9 @@ class _FriendsTabState extends State<FriendsTab> {
                             style: TextStyle(
                               fontSize: 20,
                               fontWeight: FontWeight.bold,
-                              color: netBalance >= 0 ? const Color(0xFF1CC29F) : Colors.orange,
+                              color: netBalance >= 0
+                                  ? const Color(0xFF1CC29F)
+                                  : Colors.orange,
                             ),
                           ),
                         ],
@@ -1853,7 +1853,7 @@ class _FriendsTabState extends State<FriendsTab> {
                         final isOwed = balance?['type'] == 'owed';
                         final isSettled = balance?['type'] == 'settled';
                         final amount = balance?['amount'] ?? 0.0;
-                        
+
                         return Dismissible(
                           key: Key(friend['id']),
                           direction: DismissDirection.endToStart,
@@ -1876,14 +1876,16 @@ class _FriendsTabState extends State<FriendsTab> {
                               ),
                             ),
                             subtitle: Text(friend['email']),
-                            trailing: isSettled 
+                            trailing: isSettled
                                 ? const Text('settled up')
                                 : Text(
-                                    isOwed 
+                                    isOwed
                                         ? 'owes you ${formatCurrency(amount)}'
                                         : 'you owe ${formatCurrency(amount)}',
                                     style: TextStyle(
-                                      color: isOwed ? const Color(0xFF1CC29F) : Colors.orange,
+                                      color: isOwed
+                                          ? const Color(0xFF1CC29F)
+                                          : Colors.orange,
                                       fontWeight: FontWeight.bold,
                                     ),
                                   ),
@@ -1892,7 +1894,7 @@ class _FriendsTabState extends State<FriendsTab> {
                             },
                           ),
                         );
-                      }).toList(),
+                      }),
                   ],
                 );
               },
@@ -1938,7 +1940,8 @@ class _FriendsTabState extends State<FriendsTab> {
           }
         }
         return CircleAvatar(
-          backgroundColor: Colors.primaries[friend['name'].hashCode % Colors.primaries.length],
+          backgroundColor: Colors
+              .primaries[friend['name'].hashCode % Colors.primaries.length],
           child: Text(
             friend['name'].substring(0, 1).toUpperCase(),
             style: const TextStyle(color: Colors.white),
@@ -1979,7 +1982,7 @@ class _GroupsTabState extends State<GroupsTab> {
   void _showCreateGroupDialog() async {
     final nameController = TextEditingController();
     final friends = await DatabaseService().getFriends(widget.userId);
-    
+
     if (friends.isEmpty) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -1991,9 +1994,9 @@ class _GroupsTabState extends State<GroupsTab> {
       }
       return;
     }
-    
+
     final selectedFriends = <String>{};
-    
+
     if (mounted) {
       showDialog(
         context: context,
@@ -2019,19 +2022,19 @@ class _GroupsTabState extends State<GroupsTab> {
                   ),
                   const SizedBox(height: 8),
                   ...friends.map((friend) => CheckboxListTile(
-                    title: Text(friend['name']),
-                    subtitle: Text(friend['email']),
-                    value: selectedFriends.contains(friend['id']),
-                    onChanged: (bool? value) {
-                      setDialogState(() {
-                        if (value == true) {
-                          selectedFriends.add(friend['id']);
-                        } else {
-                          selectedFriends.remove(friend['id']);
-                        }
-                      });
-                    },
-                  )).toList(),
+                        title: Text(friend['name']),
+                        subtitle: Text(friend['email']),
+                        value: selectedFriends.contains(friend['id']),
+                        onChanged: (bool? value) {
+                          setDialogState(() {
+                            if (value == true) {
+                              selectedFriends.add(friend['id']);
+                            } else {
+                              selectedFriends.remove(friend['id']);
+                            }
+                          });
+                        },
+                      )),
                 ],
               ),
             ),
@@ -2045,18 +2048,20 @@ class _GroupsTabState extends State<GroupsTab> {
                   final name = nameController.text.trim();
                   if (name.isEmpty) {
                     ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Please enter a group name')),
+                      const SnackBar(
+                          content: Text('Please enter a group name')),
                     );
                     return;
                   }
-                  
+
                   if (selectedFriends.isEmpty) {
                     ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Please select at least one friend')),
+                      const SnackBar(
+                          content: Text('Please select at least one friend')),
                     );
                     return;
                   }
-                  
+
                   // Create list of all members including current user
                   final members = [
                     {
@@ -2065,12 +2070,12 @@ class _GroupsTabState extends State<GroupsTab> {
                       'role': 'admin',
                     },
                     ...selectedFriends.map((friendId) => {
-                      'id': friendId,
-                      'balance': 0.0,
-                      'role': 'member',
-                    }),
+                          'id': friendId,
+                          'balance': 0.0,
+                          'role': 'member',
+                        }),
                   ];
-                  
+
                   final newGroup = {
                     'id': const Uuid().v4(),
                     'name': name,
@@ -2080,9 +2085,9 @@ class _GroupsTabState extends State<GroupsTab> {
                     'members': members,
                     'isSettled': false,
                   };
-                  
+
                   await DatabaseService().addGroup(newGroup);
-                  
+
                   if (mounted) {
                     Navigator.of(dialogContext).pop();
                     // Use the parent widget's setState to refresh the groups list
@@ -2105,7 +2110,8 @@ class _GroupsTabState extends State<GroupsTab> {
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Delete Group'),
-        content: Text('Are you sure you want to delete "${group['name']}"? This will delete all associated expenses and cannot be undone.'),
+        content: Text(
+            'Are you sure you want to delete "${group['name']}"? This will delete all associated expenses and cannot be undone.'),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(false),
@@ -2192,8 +2198,10 @@ class _GroupsTabState extends State<GroupsTab> {
                 }
 
                 final groups = groupsSnapshot.data!;
-                final settledGroups = groups.where((g) => g['isSettled'] == true).toList();
-                final activeGroups = groups.where((g) => g['isSettled'] != true).toList();
+                final settledGroups =
+                    groups.where((g) => g['isSettled'] == true).toList();
+                final activeGroups =
+                    groups.where((g) => g['isSettled'] != true).toList();
 
                 return ListView(
                   padding: const EdgeInsets.all(16),
@@ -2216,14 +2224,16 @@ class _GroupsTabState extends State<GroupsTab> {
                             style: TextStyle(
                               fontSize: 20,
                               fontWeight: FontWeight.bold,
-                              color: netBalance >= 0 ? const Color(0xFF1CC29F) : Colors.orange,
+                              color: netBalance >= 0
+                                  ? const Color(0xFF1CC29F)
+                                  : Colors.orange,
                             ),
                           ),
                         ],
                       ),
                     ),
                     const Divider(),
-                    
+
                     if (groups.isEmpty)
                       Center(
                         child: Column(
@@ -2263,9 +2273,10 @@ class _GroupsTabState extends State<GroupsTab> {
                     else ...[
                       // Active groups
                       ...activeGroups.map((group) {
-                        final groupBalance = _calculateGroupBalance(group, widget.userId);
+                        final groupBalance =
+                            _calculateGroupBalance(group, widget.userId);
                         final isOwed = groupBalance > 0;
-                        
+
                         return Dismissible(
                           key: Key(group['id']),
                           direction: DismissDirection.endToStart,
@@ -2281,19 +2292,22 @@ class _GroupsTabState extends State<GroupsTab> {
                           confirmDismiss: (_) => _deleteGroup(group),
                           child: ListTile(
                             leading: group['icon'] != null
-                                ? Image.asset(group['icon'], width: 40, height: 40)
+                                ? Image.asset(group['icon'],
+                                    width: 40, height: 40)
                                 : Container(
                                     width: 40,
                                     height: 40,
                                     decoration: BoxDecoration(
                                       color: Colors.primaries[
-                                        group['name'].hashCode % Colors.primaries.length
-                                      ],
+                                          group['name'].hashCode %
+                                              Colors.primaries.length],
                                       borderRadius: BorderRadius.circular(8),
                                     ),
                                     child: Center(
                                       child: Text(
-                                        group['name'].substring(0, 1).toUpperCase(),
+                                        group['name']
+                                            .substring(0, 1)
+                                            .toUpperCase(),
                                         style: const TextStyle(
                                           color: Colors.white,
                                           fontWeight: FontWeight.bold,
@@ -2315,12 +2329,14 @@ class _GroupsTabState extends State<GroupsTab> {
                             trailing: groupBalance == 0
                                 ? const Text('settled up')
                                 : Text(
-                                    isOwed 
+                                    isOwed
                                         ? 'you are owed\n${formatCurrency(groupBalance)}'
                                         : 'you owe\n${formatCurrency(groupBalance)}',
                                     textAlign: TextAlign.right,
                                     style: TextStyle(
-                                      color: isOwed ? const Color(0xFF1CC29F) : Colors.orange,
+                                      color: isOwed
+                                          ? const Color(0xFF1CC29F)
+                                          : Colors.orange,
                                     ),
                                   ),
                             onTap: () {
@@ -2335,8 +2351,8 @@ class _GroupsTabState extends State<GroupsTab> {
                             },
                           ),
                         );
-                      }).toList(),
-                      
+                      }),
+
                       if (settledGroups.isNotEmpty) ...[
                         const SizedBox(height: 16),
                         Text(
@@ -2349,45 +2365,45 @@ class _GroupsTabState extends State<GroupsTab> {
                         ),
                         const SizedBox(height: 8),
                         ...settledGroups.map((group) => ListTile(
-                          leading: Container(
-                            width: 40,
-                            height: 40,
-                            decoration: BoxDecoration(
-                              color: Colors.grey.shade200,
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            child: Center(
-                              child: Text(
-                                group['name'].substring(0, 1).toUpperCase(),
+                              leading: Container(
+                                width: 40,
+                                height: 40,
+                                decoration: BoxDecoration(
+                                  color: Colors.grey.shade200,
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: Center(
+                                  child: Text(
+                                    group['name'].substring(0, 1).toUpperCase(),
+                                    style: TextStyle(
+                                      color: Colors.grey.shade600,
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 18,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              title: Text(
+                                group['name'],
                                 style: TextStyle(
                                   color: Colors.grey.shade600,
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 18,
                                 ),
                               ),
-                            ),
-                          ),
-                          title: Text(
-                            group['name'],
-                            style: TextStyle(
-                              color: Colors.grey.shade600,
-                            ),
-                          ),
-                          subtitle: Text(
-                            '${(group['members'] as List).length} members • Settled',
-                            style: TextStyle(color: Colors.grey.shade500),
-                          ),
-                          onTap: () {
-                            Navigator.of(context).push(
-                              MaterialPageRoute(
-                                builder: (_) => GroupDetailPage(
-                                  groupId: group['id'],
-                                  userId: widget.userId,
-                                ),
+                              subtitle: Text(
+                                '${(group['members'] as List).length} members • Settled',
+                                style: TextStyle(color: Colors.grey.shade500),
                               ),
-                            );
-                          },
-                        )).toList(),
+                              onTap: () {
+                                Navigator.of(context).push(
+                                  MaterialPageRoute(
+                                    builder: (_) => GroupDetailPage(
+                                      groupId: group['id'],
+                                      userId: widget.userId,
+                                    ),
+                                  ),
+                                );
+                              },
+                            )),
                       ],
                     ],
                   ],
@@ -2402,7 +2418,8 @@ class _GroupsTabState extends State<GroupsTab> {
 
   double _calculateGroupBalance(Map<String, dynamic> group, String userId) {
     final members = List<Map<String, dynamic>>.from(group['members']);
-    final userMember = members.firstWhere((m) => m['id'] == userId, orElse: () => {'balance': 0.0});
+    final userMember = members.firstWhere((m) => m['id'] == userId,
+        orElse: () => {'balance': 0.0});
     return userMember['balance'] ?? 0.0;
   }
 }
@@ -2444,7 +2461,8 @@ class _GroupDetailPageState extends State<GroupDetailPage> {
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Delete Group'),
-        content: const Text('Are you sure you want to delete this group? This will delete all associated expenses and cannot be undone.'),
+        content: const Text(
+            'Are you sure you want to delete this group? This will delete all associated expenses and cannot be undone.'),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(false),
@@ -2533,7 +2551,7 @@ class _GroupDetailPageState extends State<GroupDetailPage> {
 
           final group = groupSnapshot.data!;
           final members = List<Map<String, dynamic>>.from(group['members']);
-          
+
           return FutureBuilder<List<Map<String, dynamic>>>(
             future: _expensesFuture,
             builder: (context, expensesSnapshot) {
@@ -2542,12 +2560,12 @@ class _GroupDetailPageState extends State<GroupDetailPage> {
               }
 
               final expenses = expensesSnapshot.data ?? [];
-              
+
               return FutureBuilder<List<Map<String, dynamic>>>(
                 future: _simplifiedDebtsFuture,
                 builder: (context, debtsSnapshot) {
                   final simplifiedDebts = debtsSnapshot.data ?? [];
-                  
+
                   return DefaultTabController(
                     length: 2,
                     child: Column(
@@ -2568,7 +2586,8 @@ class _GroupDetailPageState extends State<GroupDetailPage> {
                               expenses.isEmpty
                                   ? Center(
                                       child: Column(
-                                        mainAxisAlignment: MainAxisAlignment.center,
+                                        mainAxisAlignment:
+                                            MainAxisAlignment.center,
                                         children: [
                                           const Icon(
                                             Icons.receipt_long,
@@ -2586,19 +2605,24 @@ class _GroupDetailPageState extends State<GroupDetailPage> {
                                           const SizedBox(height: 8),
                                           const Text(
                                             'Add your first expense to get started',
-                                            style: TextStyle(color: Colors.grey),
+                                            style:
+                                                TextStyle(color: Colors.grey),
                                           ),
                                           const SizedBox(height: 16),
                                           ElevatedButton.icon(
                                             onPressed: () {
-                                              Navigator.of(context).push(
-                                                MaterialPageRoute(
-                                                  builder: (_) => AddExpensePage(
-                                                    groupId: widget.groupId,
-                                                    userId: widget.userId,
-                                                  ),
-                                                ),
-                                              ).then((_) => setState(() => _loadData()));
+                                              Navigator.of(context)
+                                                  .push(
+                                                    MaterialPageRoute(
+                                                      builder: (_) =>
+                                                          AddExpensePage(
+                                                        groupId: widget.groupId,
+                                                        userId: widget.userId,
+                                                      ),
+                                                    ),
+                                                  )
+                                                  .then((_) => setState(
+                                                      () => _loadData()));
                                             },
                                             icon: const Icon(Icons.add),
                                             label: const Text('Add an expense'),
@@ -2613,11 +2637,12 @@ class _GroupDetailPageState extends State<GroupDetailPage> {
                                         return ExpenseListItem(
                                           expense: expense,
                                           userId: widget.userId,
-                                          onDelete: () => setState(() => _loadData()),
+                                          onDelete: () =>
+                                              setState(() => _loadData()),
                                         );
                                       },
                                     ),
-                              
+
                               // Balances tab
                               ListView(
                                 padding: const EdgeInsets.all(16),
@@ -2633,23 +2658,28 @@ class _GroupDetailPageState extends State<GroupDetailPage> {
                                     ),
                                     const SizedBox(height: 8),
                                     ...simplifiedDebts.map((debt) {
-                                      final isUserInvolved = debt['from']['id'] == widget.userId || 
-                                                            debt['to']['id'] == widget.userId;
-                                      
-                        return ListTile(
+                                      final isUserInvolved =
+                                          debt['from']['id'] == widget.userId ||
+                                              debt['to']['id'] == widget.userId;
+
+                                      return ListTile(
                                         title: Row(
                                           children: [
                                             Text(
                                               debt['from']['name'],
                                               style: TextStyle(
-                                                fontWeight: isUserInvolved ? FontWeight.bold : FontWeight.normal,
+                                                fontWeight: isUserInvolved
+                                                    ? FontWeight.bold
+                                                    : FontWeight.normal,
                                               ),
                                             ),
                                             const Icon(Icons.arrow_right_alt),
                                             Text(
                                               debt['to']['name'],
                                               style: TextStyle(
-                                                fontWeight: isUserInvolved ? FontWeight.bold : FontWeight.normal,
+                                                fontWeight: isUserInvolved
+                                                    ? FontWeight.bold
+                                                    : FontWeight.normal,
                                               ),
                                             ),
                                           ],
@@ -2657,16 +2687,20 @@ class _GroupDetailPageState extends State<GroupDetailPage> {
                                         trailing: Text(
                                           'PKR ${debt['amount'].toStringAsFixed(2)}',
                                           style: TextStyle(
-                                            fontWeight: isUserInvolved ? FontWeight.bold : FontWeight.normal,
-                                            color: isUserInvolved ? Colors.black : Colors.grey,
+                                            fontWeight: isUserInvolved
+                                                ? FontWeight.bold
+                                                : FontWeight.normal,
+                                            color: isUserInvolved
+                                                ? Colors.black
+                                                : Colors.grey,
                                           ),
                                         ),
                                       );
-                                    }).toList(),
+                                    }),
                                   ],
-                                  
+
                                   const SizedBox(height: 16),
-                                  
+
                                   // Individual balances
                                   const Text(
                                     'INDIVIDUAL BALANCES',
@@ -2678,23 +2712,31 @@ class _GroupDetailPageState extends State<GroupDetailPage> {
                                   const SizedBox(height: 8),
                                   ...members.map((member) {
                                     final balance = member['balance'] ?? 0.0;
-                                    final isCurrentUser = member['id'] == widget.userId;
-                                    
-                                    if (isCurrentUser) return const SizedBox.shrink();
-                                    
+                                    final isCurrentUser =
+                                        member['id'] == widget.userId;
+
+                                    if (isCurrentUser)
+                                      return const SizedBox.shrink();
+
                                     return FutureBuilder<Map<String, dynamic>?>(
-                                      future: DatabaseService().getUserById(member['id']),
+                                      future: DatabaseService()
+                                          .getUserById(member['id']),
                                       builder: (context, userSnapshot) {
-                                        final userName = userSnapshot.data?['name'] ?? 'Unknown';
-                                        
+                                        final userName =
+                                            userSnapshot.data?['name'] ??
+                                                'Unknown';
+
                                         return ListTile(
                                           leading: CircleAvatar(
                                             backgroundColor: Colors.primaries[
-                                              userName.hashCode % Colors.primaries.length
-                                            ],
+                                                userName.hashCode %
+                                                    Colors.primaries.length],
                                             child: Text(
-                                              userName.substring(0, 1).toUpperCase(),
-                                              style: const TextStyle(color: Colors.white),
+                                              userName
+                                                  .substring(0, 1)
+                                                  .toUpperCase(),
+                                              style: const TextStyle(
+                                                  color: Colors.white),
                                             ),
                                           ),
                                           title: Text(userName),
@@ -2715,7 +2757,7 @@ class _GroupDetailPageState extends State<GroupDetailPage> {
                                         );
                                       },
                                     );
-                                  }).toList(),
+                                  }),
                                 ],
                               ),
                             ],
@@ -2732,14 +2774,16 @@ class _GroupDetailPageState extends State<GroupDetailPage> {
       ),
       floatingActionButton: FloatingActionButton(
         onPressed: () {
-          Navigator.of(context).push(
-            MaterialPageRoute(
-              builder: (_) => AddExpensePage(
-                groupId: widget.groupId,
-                userId: widget.userId,
-              ),
-            ),
-          ).then((_) => setState(() => _loadData()));
+          Navigator.of(context)
+              .push(
+                MaterialPageRoute(
+                  builder: (_) => AddExpensePage(
+                    groupId: widget.groupId,
+                    userId: widget.userId,
+                  ),
+                ),
+              )
+              .then((_) => setState(() => _loadData()));
         },
         backgroundColor: const Color(0xFF1CC29F),
         child: const Icon(Icons.add, color: Colors.white),
@@ -2766,7 +2810,8 @@ class ExpenseListItem extends StatelessWidget {
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Delete Expense'),
-        content: const Text('Are you sure you want to delete this expense? This will update all balances and cannot be undone.'),
+        content: const Text(
+            'Are you sure you want to delete this expense? This will update all balances and cannot be undone.'),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(false),
@@ -2797,12 +2842,12 @@ class ExpenseListItem extends StatelessWidget {
     final isUserPayer = expense['paidBy'] == userId;
     final date = DateTime.parse(expense['date']);
     final formattedDate = DateFormat('MMM d, yyyy').format(date);
-    
+
     return FutureBuilder<Map<String, dynamic>?>(
       future: DatabaseService().getUserById(expense['paidBy']),
       builder: (context, snapshot) {
         final payerName = snapshot.data?['name'] ?? 'Unknown';
-        
+
         return Dismissible(
           key: Key(expense['id']),
           direction: DismissDirection.endToStart,
@@ -2862,7 +2907,8 @@ class ExpenseListItem extends StatelessWidget {
                         children: [
                           Icon(Icons.delete, color: Colors.red),
                           SizedBox(width: 8),
-                          Text('Delete expense', style: TextStyle(color: Colors.red)),
+                          Text('Delete expense',
+                              style: TextStyle(color: Colors.red)),
                         ],
                       ),
                     ),
@@ -2885,14 +2931,14 @@ class ExpenseListItem extends StatelessWidget {
       (split) => split['userId'] == userId,
       orElse: () => {'amount': 0.0},
     );
-    
+
     final isUserPayer = expense['paidBy'] == userId;
     final userAmount = userSplit['amount'] ?? 0.0;
-    
+
     if (isUserPayer) {
       final totalLent = expense['amount'] - userAmount;
       if (totalLent <= 0) return const Text('you paid');
-      
+
       return Text(
         'you lent\n${formatCurrency(totalLent)}',
         textAlign: TextAlign.right,
@@ -2913,27 +2959,43 @@ class ExpenseListItem extends StatelessWidget {
 
   IconData _getCategoryIcon(String? category) {
     switch (category) {
-      case 'food': return Icons.restaurant;
-      case 'transport': return Icons.directions_car;
-      case 'accommodation': return Icons.hotel;
-      case 'entertainment': return Icons.movie;
-      case 'shopping': return Icons.shopping_bag;
-      case 'utilities': return Icons.lightbulb;
-      case 'other': return Icons.category;
-      default: return Icons.receipt;
+      case 'food':
+        return Icons.restaurant;
+      case 'transport':
+        return Icons.directions_car;
+      case 'accommodation':
+        return Icons.hotel;
+      case 'entertainment':
+        return Icons.movie;
+      case 'shopping':
+        return Icons.shopping_bag;
+      case 'utilities':
+        return Icons.lightbulb;
+      case 'other':
+        return Icons.category;
+      default:
+        return Icons.receipt;
     }
   }
 
   Color _getCategoryColor(String? category) {
     switch (category) {
-      case 'food': return Colors.orange;
-      case 'transport': return Colors.blue;
-      case 'accommodation': return Colors.purple;
-      case 'entertainment': return Colors.pink;
-      case 'shopping': return Colors.teal;
-      case 'utilities': return Colors.amber;
-      case 'other': return Colors.grey;
-      default: return Colors.grey;
+      case 'food':
+        return Colors.orange;
+      case 'transport':
+        return Colors.blue;
+      case 'accommodation':
+        return Colors.purple;
+      case 'entertainment':
+        return Colors.pink;
+      case 'shopping':
+        return Colors.teal;
+      case 'utilities':
+        return Colors.amber;
+      case 'other':
+        return Colors.grey;
+      default:
+        return Colors.grey;
     }
   }
 }
@@ -2990,7 +3052,7 @@ class AddExpenseTab extends StatelessWidget {
             }
 
             final friends = snapshot.data ?? [];
-            
+
             if (friends.isEmpty) {
               return const Column(
                 mainAxisSize: MainAxisSize.min,
@@ -3017,7 +3079,8 @@ class AddExpenseTab extends StatelessWidget {
                   final friend = friends[index];
                   return ListTile(
                     leading: CircleAvatar(
-                      backgroundColor: Colors.primaries[friend['name'].hashCode % Colors.primaries.length],
+                      backgroundColor: Colors.primaries[
+                          friend['name'].hashCode % Colors.primaries.length],
                       child: Text(
                         friend['name'].toString().substring(0, 1).toUpperCase(),
                         style: const TextStyle(color: Colors.white),
@@ -3076,16 +3139,16 @@ class AddExpenseTab extends StatelessWidget {
             }
 
             final groups = snapshot.data ?? [];
-            
+
             if (groups.isEmpty) {
-              return Column(
+              return const Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Icon(Icons.groups_outlined, size: 48, color: Colors.grey),
-                  const SizedBox(height: 16),
-                  const Text('No groups yet'),
-                  const SizedBox(height: 8),
-                  const Text(
+                  SizedBox(height: 16),
+                  Text('No groups yet'),
+                  SizedBox(height: 8),
+                  Text(
                     'Create a group first to split expenses',
                     style: TextStyle(color: Colors.grey),
                     textAlign: TextAlign.center,
@@ -3106,12 +3169,17 @@ class AddExpenseTab extends StatelessWidget {
                       width: 40,
                       height: 40,
                       decoration: BoxDecoration(
-                        color: Colors.primaries[group['name'].toString().hashCode % Colors.primaries.length],
+                        color: Colors.primaries[
+                            group['name'].toString().hashCode %
+                                Colors.primaries.length],
                         borderRadius: BorderRadius.circular(8),
                       ),
                       child: Center(
                         child: Text(
-                          group['name'].toString().substring(0, 1).toUpperCase(),
+                          group['name']
+                              .toString()
+                              .substring(0, 1)
+                              .toUpperCase(),
                           style: const TextStyle(
                             color: Colors.white,
                             fontWeight: FontWeight.bold,
@@ -3120,7 +3188,8 @@ class AddExpenseTab extends StatelessWidget {
                       ),
                     ),
                     title: Text(group['name'].toString()),
-                    subtitle: Text('${(group['members'] as List).length} members'),
+                    subtitle:
+                        Text('${(group['members'] as List).length} members'),
                     onTap: () {
                       Navigator.pop(context);
                       Navigator.of(context).push(
@@ -3219,7 +3288,7 @@ class _AddExpensePageState extends State<AddExpensePage> {
   DateTime _selectedDate = DateTime.now();
   File? _receiptImage;
   List<Map<String, dynamic>> _members = [];
-  Map<String, double> _splitAmounts = {};
+  final Map<String, double> _splitAmounts = {};
   String _splitMethod = 'equal';
 
   @override
@@ -3231,10 +3300,11 @@ class _AddExpensePageState extends State<AddExpensePage> {
   Future<void> _loadGroupMembers() async {
     if (widget.isTemporaryGroup && widget.tempGroup != null) {
       setState(() {
-        _members = List<Map<String, dynamic>>.from(widget.tempGroup!['members']);
-        
+        _members =
+            List<Map<String, dynamic>>.from(widget.tempGroup!['members']);
+
         // Initialize split amounts
-        final equalAmount = 0.0; // Will be calculated when amount is entered
+        const equalAmount = 0.0; // Will be calculated when amount is entered
         for (var member in _members) {
           _splitAmounts[member['id']] = equalAmount;
         }
@@ -3244,9 +3314,9 @@ class _AddExpensePageState extends State<AddExpensePage> {
       if (group != null) {
         setState(() {
           _members = List<Map<String, dynamic>>.from(group['members']);
-          
+
           // Initialize split amounts
-          final equalAmount = 0.0; // Will be calculated when amount is entered
+          const equalAmount = 0.0; // Will be calculated when amount is entered
           for (var member in _members) {
             _splitAmounts[member['id']] = equalAmount;
           }
@@ -3258,7 +3328,7 @@ class _AddExpensePageState extends State<AddExpensePage> {
   Future<void> _pickImage() async {
     final picker = ImagePicker();
     final pickedFile = await picker.pickImage(source: ImageSource.gallery);
-    
+
     if (pickedFile != null) {
       setState(() {
         _receiptImage = File(pickedFile.path);
@@ -3268,9 +3338,9 @@ class _AddExpensePageState extends State<AddExpensePage> {
 
   void _updateSplitAmounts() {
     if (_amountController.text.isEmpty) return;
-    
+
     final totalAmount = double.tryParse(_amountController.text) ?? 0;
-    
+
     if (_splitMethod == 'equal') {
       final perPersonAmount = totalAmount / _members.length;
       for (var member in _members) {
@@ -3278,23 +3348,23 @@ class _AddExpensePageState extends State<AddExpensePage> {
       }
     }
     // Other split methods would be implemented here
-    
+
     setState(() {});
   }
 
   Future<void> _saveExpense() async {
     if (!_formKey.currentState!.validate()) return;
-    
+
     final description = _descriptionController.text.trim();
     final amount = double.tryParse(_amountController.text) ?? 0;
-    
+
     if (amount <= 0) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Please enter a valid amount')),
       );
       return;
     }
-    
+
     // Prepare split data
     final splitWith = _members.map((member) {
       return {
@@ -3302,7 +3372,7 @@ class _AddExpensePageState extends State<AddExpensePage> {
         'amount': _splitAmounts[member['id']] ?? 0.0,
       };
     }).toList();
-    
+
     // Create expense object
     final expense = {
       'id': const Uuid().v4(),
@@ -3318,10 +3388,10 @@ class _AddExpensePageState extends State<AddExpensePage> {
       'createdAt': DateTime.now().toIso8601String(),
       'isIndividualExpense': widget.isTemporaryGroup,
     };
-    
+
     // Save to database
     await DatabaseService().addExpense(expense);
-    
+
     // Create activity record
     final activity = {
       'id': const Uuid().v4(),
@@ -3332,41 +3402,42 @@ class _AddExpensePageState extends State<AddExpensePage> {
       'amount': amount,
       'timestamp': DateTime.now().toIso8601String(),
     };
-    
+
     await DatabaseService().addActivity(activity);
-    
+
     // Update balances
     if (!widget.isTemporaryGroup) {
       // Update group balances only for real groups
       final group = await DatabaseService().getGroupById(widget.groupId);
       if (group != null) {
         final members = List<Map<String, dynamic>>.from(group['members']);
-        
+
         for (var i = 0; i < members.length; i++) {
           final member = members[i];
           final split = splitWith.firstWhere(
             (s) => s['userId'] == member['id'],
             orElse: () => {'amount': 0.0},
           );
-          
+
           if (member['id'] == widget.userId) {
             // Current user paid
-            member['balance'] = (member['balance'] ?? 0.0) + (amount - split['amount']);
+            member['balance'] =
+                (member['balance'] ?? 0.0) + (amount - split['amount']);
           } else {
             // Other members
             member['balance'] = (member['balance'] ?? 0.0) - split['amount'];
           }
         }
-        
+
         final updatedGroup = {
           ...group,
           'members': members,
         };
-        
+
         await DatabaseService().updateGroup(updatedGroup);
       }
     }
-    
+
     if (mounted) {
       Navigator.of(context).pop();
     }
@@ -3405,7 +3476,7 @@ class _AddExpensePageState extends State<AddExpensePage> {
               },
             ),
             const SizedBox(height: 16),
-            
+
             // Amount
             TextFormField(
               controller: _amountController,
@@ -3418,7 +3489,8 @@ class _AddExpensePageState extends State<AddExpensePage> {
                 if (value == null || value.isEmpty) {
                   return 'Please enter an amount';
                 }
-                if (double.tryParse(value) == null || double.parse(value) <= 0) {
+                if (double.tryParse(value) == null ||
+                    double.parse(value) <= 0) {
                   return 'Please enter a valid amount';
                 }
                 return null;
@@ -3426,7 +3498,7 @@ class _AddExpensePageState extends State<AddExpensePage> {
               onChanged: (_) => _updateSplitAmounts(),
             ),
             const SizedBox(height: 16),
-            
+
             // Category
             DropdownButtonFormField<String>(
               value: _selectedCategory,
@@ -3514,7 +3586,7 @@ class _AddExpensePageState extends State<AddExpensePage> {
               },
             ),
             const SizedBox(height: 16),
-            
+
             // Date
             ListTile(
               title: const Text('Date'),
@@ -3527,7 +3599,7 @@ class _AddExpensePageState extends State<AddExpensePage> {
                   firstDate: DateTime(2020),
                   lastDate: DateTime.now().add(const Duration(days: 1)),
                 );
-                
+
                 if (pickedDate != null) {
                   setState(() {
                     _selectedDate = pickedDate;
@@ -3536,7 +3608,7 @@ class _AddExpensePageState extends State<AddExpensePage> {
               },
             ),
             const Divider(),
-            
+
             // Receipt
             ListTile(
               title: const Text('Add receipt'),
@@ -3549,7 +3621,7 @@ class _AddExpensePageState extends State<AddExpensePage> {
               onTap: _pickImage,
             ),
             const Divider(),
-            
+
             // Split method
             const Text(
               'SPLIT DETAILS',
@@ -3592,7 +3664,7 @@ class _AddExpensePageState extends State<AddExpensePage> {
               },
             ),
             const SizedBox(height: 16),
-            
+
             // Members list
             ..._members.map((member) {
               return FutureBuilder<Map<String, dynamic>?>(
@@ -3600,12 +3672,11 @@ class _AddExpensePageState extends State<AddExpensePage> {
                 builder: (context, snapshot) {
                   final userName = snapshot.data?['name'] ?? 'Unknown';
                   final isCurrentUser = member['id'] == widget.userId;
-                  
+
                   return ListTile(
                     leading: CircleAvatar(
                       backgroundColor: Colors.primaries[
-                        userName.hashCode % Colors.primaries.length
-                      ],
+                          userName.hashCode % Colors.primaries.length],
                       child: Text(
                         userName.substring(0, 1).toUpperCase(),
                         style: const TextStyle(color: Colors.white),
@@ -3622,10 +3693,10 @@ class _AddExpensePageState extends State<AddExpensePage> {
                   );
                 },
               );
-            }).toList(),
-            
+            }),
+
             const SizedBox(height: 32),
-            
+
             // Save button
             ElevatedButton(
               onPressed: _saveExpense,
@@ -3734,7 +3805,8 @@ class _ActivityTabState extends State<ActivityTab> {
                     FutureBuilder<Map<String, dynamic>>(
                       future: _balancesFuture,
                       builder: (context, snapshot) {
-                        if (snapshot.connectionState == ConnectionState.waiting) {
+                        if (snapshot.connectionState ==
+                            ConnectionState.waiting) {
                           return const SizedBox(
                             height: 200,
                             child: Center(child: CircularProgressIndicator()),
@@ -3744,7 +3816,8 @@ class _ActivityTabState extends State<ActivityTab> {
                         if (snapshot.hasError || !snapshot.hasData) {
                           return const SizedBox(
                             height: 200,
-                            child: Center(child: Text('Failed to load balance data')),
+                            child: Center(
+                                child: Text('Failed to load balance data')),
                           );
                         }
 
@@ -3775,7 +3848,7 @@ class _ActivityTabState extends State<ActivityTab> {
                   }
 
                   final activities = snapshot.data ?? [];
-                  
+
                   if (activities.isEmpty) {
                     return Center(
                       child: Column(
@@ -3806,7 +3879,7 @@ class _ActivityTabState extends State<ActivityTab> {
                       ),
                     );
                   }
-                  
+
                   return ListView.builder(
                     padding: const EdgeInsets.symmetric(vertical: 8),
                     itemCount: activities.length,
@@ -3839,21 +3912,27 @@ class ExpenseOverviewChart extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final userBalances = List<Map<String, dynamic>>.from(balances['userBalances']);
-    final owedBalances = userBalances.where((b) => b['type'] == 'owed').toList();
+    final userBalances =
+        List<Map<String, dynamic>>.from(balances['userBalances']);
+    final owedBalances =
+        userBalances.where((b) => b['type'] == 'owed').toList();
     final oweBalances = userBalances.where((b) => b['type'] == 'owe').toList();
 
     // Sort balances by amount
-    owedBalances.sort((a, b) => (b['amount'] as num).compareTo(a['amount'] as num));
-    oweBalances.sort((a, b) => (b['amount'] as num).compareTo(a['amount'] as num));
+    owedBalances
+        .sort((a, b) => (b['amount'] as num).compareTo(a['amount'] as num));
+    oweBalances
+        .sort((a, b) => (b['amount'] as num).compareTo(a['amount'] as num));
 
     // Take top 5 for each category
     final topOwed = owedBalances.take(5).toList();
     final topOwe = oweBalances.take(5).toList();
 
     // Calculate total amounts
-    final totalOwed = owedBalances.fold<double>(0, (sum, b) => sum + (b['amount'] as num));
-    final totalOwe = oweBalances.fold<double>(0, (sum, b) => sum + (b['amount'] as num));
+    final totalOwed =
+        owedBalances.fold<double>(0, (sum, b) => sum + (b['amount'] as num));
+    final totalOwe =
+        oweBalances.fold<double>(0, (sum, b) => sum + (b['amount'] as num));
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -3982,7 +4061,9 @@ class ExpenseOverviewChart extends StatelessWidget {
                       child: BarChart(
                         BarChartData(
                           alignment: BarChartAlignment.spaceAround,
-                          maxY: topOwed.isEmpty ? 10 : (topOwed.first['amount'] * 1.2),
+                          maxY: topOwed.isEmpty
+                              ? 10
+                              : (topOwed.first['amount'] * 1.2),
                           titlesData: FlTitlesData(
                             show: true,
                             rightTitles: const AxisTitles(
@@ -3998,7 +4079,8 @@ class ExpenseOverviewChart extends StatelessWidget {
                                   // Format large numbers with K suffix
                                   String formattedValue;
                                   if (value >= 1000) {
-                                    formattedValue = '${(value / 1000).toStringAsFixed(0)}K';
+                                    formattedValue =
+                                        '${(value / 1000).toStringAsFixed(0)}K';
                                   } else {
                                     formattedValue = value.toInt().toString();
                                   }
@@ -4014,18 +4096,22 @@ class ExpenseOverviewChart extends StatelessWidget {
                                   );
                                 },
                                 reservedSize: 60,
-                                interval: (topOwed.first['amount'] / 4).roundToDouble(),
+                                interval: (topOwed.first['amount'] / 4)
+                                    .roundToDouble(),
                               ),
                             ),
                             bottomTitles: AxisTitles(
                               sideTitles: SideTitles(
                                 showTitles: true,
                                 getTitlesWidget: (value, meta) {
-                                  if (value.toInt() >= topOwed.length) return const Text('');
+                                  if (value.toInt() >= topOwed.length)
+                                    return const Text('');
                                   return Padding(
                                     padding: const EdgeInsets.only(top: 8),
                                     child: Text(
-                                      topOwed[value.toInt()]['name'].toString().split(' ')[0],
+                                      topOwed[value.toInt()]['name']
+                                          .toString()
+                                          .split(' ')[0],
                                       style: TextStyle(
                                         fontSize: 12,
                                         color: Colors.grey.shade800,
@@ -4099,7 +4185,9 @@ class ExpenseOverviewChart extends StatelessWidget {
                       child: BarChart(
                         BarChartData(
                           alignment: BarChartAlignment.spaceAround,
-                          maxY: topOwe.isEmpty ? 10 : (topOwe.first['amount'] * 1.2),
+                          maxY: topOwe.isEmpty
+                              ? 10
+                              : (topOwe.first['amount'] * 1.2),
                           titlesData: FlTitlesData(
                             show: true,
                             rightTitles: const AxisTitles(
@@ -4115,7 +4203,8 @@ class ExpenseOverviewChart extends StatelessWidget {
                                   // Format large numbers with K suffix
                                   String formattedValue;
                                   if (value >= 1000) {
-                                    formattedValue = '${(value / 1000).toStringAsFixed(0)}K';
+                                    formattedValue =
+                                        '${(value / 1000).toStringAsFixed(0)}K';
                                   } else {
                                     formattedValue = value.toInt().toString();
                                   }
@@ -4131,18 +4220,22 @@ class ExpenseOverviewChart extends StatelessWidget {
                                   );
                                 },
                                 reservedSize: 60,
-                                interval: (topOwe.first['amount'] / 4).roundToDouble(),
+                                interval: (topOwe.first['amount'] / 4)
+                                    .roundToDouble(),
                               ),
                             ),
                             bottomTitles: AxisTitles(
                               sideTitles: SideTitles(
                                 showTitles: true,
                                 getTitlesWidget: (value, meta) {
-                                  if (value.toInt() >= topOwe.length) return const Text('');
+                                  if (value.toInt() >= topOwe.length)
+                                    return const Text('');
                                   return Padding(
                                     padding: const EdgeInsets.only(top: 8),
                                     child: Text(
-                                      topOwe[value.toInt()]['name'].toString().split(' ')[0],
+                                      topOwe[value.toInt()]['name']
+                                          .toString()
+                                          .split(' ')[0],
                                       style: TextStyle(
                                         fontSize: 12,
                                         color: Colors.grey.shade800,
@@ -4215,8 +4308,9 @@ class ActivityListItem extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final timestamp = DateTime.parse(activity['timestamp']);
-    final formattedDate = DateFormat('MMM d, yyyy \'at\' h:mm a').format(timestamp);
-    
+    final formattedDate =
+        DateFormat('MMM d, yyyy \'at\' h:mm a').format(timestamp);
+
     return FutureBuilder<Map<String, dynamic>?>(
       future: _getUserData(),
       builder: (context, userSnapshot) {
@@ -4225,14 +4319,14 @@ class ActivityListItem extends StatelessWidget {
             title: Text('Loading...'),
           );
         }
-        
+
         final userData = userSnapshot.data;
-        
+
         return FutureBuilder<Map<String, dynamic>?>(
           future: _getRelatedData(),
           builder: (context, relatedSnapshot) {
             final relatedData = relatedSnapshot.data;
-            
+
             return ListTile(
               leading: _buildLeadingIcon(),
               title: _buildTitle(userData, relatedData),
@@ -4255,11 +4349,13 @@ class ActivityListItem extends StatelessWidget {
   }
 
   Future<Map<String, dynamic>?> _getRelatedData() async {
-    if (activity['type'] == 'expense_added' || activity['type'] == 'expense_updated') {
+    if (activity['type'] == 'expense_added' ||
+        activity['type'] == 'expense_updated') {
       if (activity['groupId'] != null) {
         return DatabaseService().getGroupById(activity['groupId']);
       }
-    } else if (activity['type'] == 'payment_recorded' || activity['type'] == 'payment_received') {
+    } else if (activity['type'] == 'payment_recorded' ||
+        activity['type'] == 'payment_received') {
       if (activity['relatedUserId'] != null) {
         return DatabaseService().getUserById(activity['relatedUserId']);
       }
@@ -4303,10 +4399,11 @@ class ActivityListItem extends StatelessWidget {
     }
   }
 
-  Widget _buildTitle(Map<String, dynamic>? userData, Map<String, dynamic>? relatedData) {
+  Widget _buildTitle(
+      Map<String, dynamic>? userData, Map<String, dynamic>? relatedData) {
     final isCurrentUser = activity['userId'] == userId;
     final userName = userData?['name'] ?? 'Unknown';
-    
+
     switch (activity['type']) {
       case 'expense_added':
         final groupName = relatedData?['name'] ?? 'a group';
@@ -4372,7 +4469,9 @@ class ActivityListItem extends StatelessWidget {
         );
       default:
         return Text(
-          isCurrentUser ? 'You performed an action' : '$userName performed an action',
+          isCurrentUser
+              ? 'You performed an action'
+              : '$userName performed an action',
         );
     }
   }
@@ -4418,7 +4517,8 @@ class _AccountTabState extends State<AccountTab> {
                       leading: Text(currency.symbol),
                       title: Text(currency.name),
                       subtitle: Text(currency.code),
-                      selected: currency.code == CurrencyNotifier().currency.code,
+                      selected:
+                          currency.code == CurrencyNotifier().currency.code,
                       onTap: () {
                         Navigator.of(context).pop(currency);
                       },
@@ -4538,7 +4638,8 @@ class _AccountTabState extends State<AccountTab> {
                   SwitchListTile(
                     secondary: const Icon(Icons.dark_mode),
                     title: const Text('Dark Mode'),
-                    subtitle: Text(isDark ? 'Dark theme enabled' : 'Light theme enabled'),
+                    subtitle: Text(
+                        isDark ? 'Dark theme enabled' : 'Light theme enabled'),
                     value: isDark,
                     onChanged: (value) {
                       ThemeNotifier().setThemeMode(
@@ -4669,7 +4770,7 @@ class _AccountTabState extends State<AccountTab> {
               ),
 
               const SizedBox(height: 16),
-              
+
               // Log Out Button
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16.0),
@@ -4747,7 +4848,7 @@ class _EditProfilePageState extends State<EditProfilePage> {
         maxHeight: 800,
         imageQuality: 85,
       );
-      
+
       if (pickedFile != null) {
         if (kIsWeb) {
           // Handle web platform
@@ -4783,7 +4884,8 @@ class _EditProfilePageState extends State<EditProfilePage> {
 
     if (_currentProfileImage != null) {
       if (kIsWeb && _currentProfileImage is String) {
-        return Image.memory(base64Decode(_currentProfileImage), fit: BoxFit.cover);
+        return Image.memory(base64Decode(_currentProfileImage),
+            fit: BoxFit.cover);
       }
       if (!kIsWeb && _currentProfileImage is File) {
         return Image.file(_currentProfileImage, fit: BoxFit.cover);
@@ -4798,30 +4900,30 @@ class _EditProfilePageState extends State<EditProfilePage> {
 
   Future<void> _saveProfile() async {
     if (!_formKey.currentState!.validate()) return;
-    
+
     setState(() {
       _isLoading = true;
     });
-    
+
     try {
       String? profilePicturePath = widget.user['profilePicture'];
-      
+
       if (_newProfileImage != null) {
         profilePicturePath = await DatabaseService().saveProfileImage(
           widget.user['id'],
           _newProfileImage!,
         );
       }
-      
+
       final updatedUser = {
         ...widget.user,
         'name': _nameController.text.trim(),
         'email': _emailController.text.trim(),
         'profilePicture': profilePicturePath,
       };
-      
+
       final success = await AuthService().updateProfile(updatedUser);
-      
+
       if (mounted) {
         if (success) {
           Navigator.of(context).pop();
@@ -4834,7 +4936,8 @@ class _EditProfilePageState extends State<EditProfilePage> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('An error occurred while saving profile')),
+          const SnackBar(
+              content: Text('An error occurred while saving profile')),
         );
       }
     } finally {
@@ -4919,7 +5022,8 @@ class _EditProfilePageState extends State<EditProfilePage> {
                 if (value == null || value.isEmpty) {
                   return 'Please enter your email';
                 }
-                if (!RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$').hasMatch(value)) {
+                if (!RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$')
+                    .hasMatch(value)) {
                   return 'Please enter a valid email';
                 }
                 return null;
