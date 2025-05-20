@@ -7,100 +7,21 @@ import 'package:path_provider/path_provider.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:splitwise/models/currency.dart';
 import 'package:uuid/uuid.dart';
 import 'dart:html' as html;
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:logging/logging.dart';
 import 'package:fl_chart/fl_chart.dart';
-
-import 'package:splitwise/currency.dart';
+import 'package:splitwise/providers/theme_provider.dart';
+import 'package:splitwise/providers/currency_provider.dart';
+import 'package:splitwise/screens/splash_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await ThemeNotifier().loadThemeMode();
   await CurrencyNotifier().loadCurrency();
   runApp(const SplitWiseApp());
-}
-
-// Theme Notifier
-class ThemeNotifier extends ChangeNotifier {
-  static final ThemeNotifier _instance = ThemeNotifier._internal();
-  factory ThemeNotifier() => _instance;
-  ThemeNotifier._internal();
-
-  ThemeMode _themeMode = ThemeMode.system;
-  ThemeMode get themeMode => _themeMode;
-
-  Future<void> setThemeMode(ThemeMode mode) async {
-    _themeMode = mode;
-    notifyListeners();
-
-    if (kIsWeb) {
-      html.window.localStorage['themeMode'] =
-          mode == ThemeMode.dark ? 'dark' : 'light';
-    } else {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setBool('isDarkMode', mode == ThemeMode.dark);
-    }
-  }
-
-  Future<void> loadThemeMode() async {
-    if (kIsWeb) {
-      final storage = html.window.localStorage;
-      if (storage.containsKey('themeMode')) {
-        _themeMode =
-            storage['themeMode'] == 'dark' ? ThemeMode.dark : ThemeMode.light;
-      }
-    } else {
-      final prefs = await SharedPreferences.getInstance();
-      final isDark = prefs.getBool('isDarkMode');
-      if (isDark != null) {
-        _themeMode = isDark ? ThemeMode.dark : ThemeMode.light;
-      }
-    }
-    notifyListeners();
-  }
-}
-
-// Currency Notifier
-class CurrencyNotifier extends ChangeNotifier {
-  static final CurrencyNotifier _instance = CurrencyNotifier._internal();
-  factory CurrencyNotifier() => _instance;
-  CurrencyNotifier._internal();
-
-  Currency _currency = currencies[0];
-  Currency get currency => _currency;
-
-  Future<void> setCurrency(Currency currency) async {
-    _currency = currency;
-    notifyListeners();
-
-    if (kIsWeb) {
-      html.window.localStorage['currency'] = currency.code;
-    } else {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setString('currency', currency.code);
-    }
-  }
-
-  Future<void> loadCurrency() async {
-    if (kIsWeb) {
-      final storage = html.window.localStorage;
-      final currencyCode = storage['currency'] ?? 'PKR';
-      _currency = currencies.firstWhere(
-        (c) => c.code == currencyCode,
-        orElse: () => currencies[0],
-      );
-    } else {
-      final prefs = await SharedPreferences.getInstance();
-      final currencyCode = prefs.getString('currency') ?? 'PKR';
-      _currency = currencies.firstWhere(
-        (c) => c.code == currencyCode,
-        orElse: () => currencies[0],
-      );
-    }
-    notifyListeners();
-  }
 }
 
 class SplitWiseApp extends StatelessWidget {

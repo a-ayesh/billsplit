@@ -1,5 +1,5 @@
 name: splitwise
-description: A Splitwise clone app built with Flutter.
+description: A Flutter app for splitting expenses between friends.
 publish_to: 'none'
 version: 1.0.0+1
 
@@ -9,7 +9,7 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  cupertino_icons: ^1.0.6
+  cupertino_icons: ^1.0.2
   path_provider: ^2.1.2
   image_picker: ^1.0.7
   intl: ^0.19.0
@@ -21,10 +21,11 @@ dependencies:
 dev_dependencies:
   flutter_test:
     sdk: flutter
-  flutter_lints: ^3.0.1
+  flutter_lints: ^2.0.0
 
 flutter:
   uses-material-design: true
   assets:
+    - assets/images/
     - assets/logo.png
     - assets/expense_illustration.png
